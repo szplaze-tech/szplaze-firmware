@@ -36,3 +36,4 @@ build_verify/
 *.pyc
 __pycache__/
 # Arduino ESP32 toolchain zip: users download from espressif official site
+一键上传.bat

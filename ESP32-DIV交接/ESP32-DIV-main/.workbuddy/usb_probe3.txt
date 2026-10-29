@@ -1,0 +1,72 @@
+﻿=== VID_11CA device now ===
+
+
+Status       : Unknown
+Present      : False
+Class        : Ports
+FriendlyName : Silicon Labs CP210x USB to UART Bridge (COM12)
+InstanceId   : USB\VID_11CA&PID_0204\0001
+
+
+
+
+=== Problem code ===
+Code= Desc= Provider=Silicon Laboratories Inc.
+
+=== PORTS class ===
+
+
+Status       : OK
+FriendlyName : 蓝牙链接上的标准串行 (COM3)
+InstanceId   : BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000\7&259C2D73&0&000000000000_00000002
+
+Status       : OK
+FriendlyName : 蓝牙链接上的标准串行 (COM4)
+InstanceId   : BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_VID&000105D6_PID&000A\7&259C2D73&0&90EF4A7EED77_C00000000
+
+
+
+
+=== silabser service ===
+
+
+Name      : silabser
+Status    : Running
+StartType : Manual
+
+
+
+
+=== System eventlog last 30 (errors/warn) ===
+
+TimeCreated       ProviderName Id LevelDisplayName
+-----------       ------------ -- ----------------
+2026/9/7 17:12:59 hcmon         0 警告              
+2026/9/7 17:12:32 hcmon         0 警告              
+2026/9/7 17:12:29 hcmon         0 警告              
+2026/9/7 17:12:25 hcmon         0 警告              
+2026/9/7 17:11:48 hcmon         0 警告              
+2026/9/7 17:11:44 hcmon         0 警告              
+2026/9/7 17:10:30 hcmon         0 警告              
+2026/9/7 17:10:08 hcmon         0 警告              
+2026/9/7 17:03:12 hcmon         0 警告              
+2026/9/7 17:00:06 hcmon         0 警告              
+2026/9/7 17:00:01 hcmon         0 警告              
+2026/9/7 16:59:48 hcmon         0 警告              
+2026/9/7 16:59:27 hcmon         0 警告              
+2026/9/7 16:59:21 hcmon         0 警告              
+2026/9/7 16:57:06 hcmon         0 警告              
+2026/9/7 16:55:13 hcmon         0 警告              
+2026/9/7 16:54:32 hcmon         0 警告              
+2026/9/7 16:54:10 hcmon         0 警告              
+2026/9/7 16:54:06 hcmon         0 警告              
+2026/9/7 16:53:57 hcmon         0 警告              
+2026/9/7 16:53:34 hcmon         0 警告              
+2026/9/7 16:53:25 hcmon         0 警告              
+2026/9/7 16:45:44 hcmon         0 警告              
+2026/9/7 16:45:42 hcmon         0 警告              
+2026/9/7 16:45:37 hcmon         0 警告              
+2026/9/7 16:45:32 hcmon         0 警告              
+
+
+

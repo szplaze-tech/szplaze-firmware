@@ -1,0 +1,56 @@
+﻿=== PORTS (present) ===
+
+Status FriendlyName      InstanceId                                                                                              
+------ ------------      ----------                                                                                              
+OK     蓝牙链接上的标准串行 (COM3) BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000\7&259C2D73&0&000000000000_00000002         
+OK     蓝牙链接上的标准串行 (COM4) BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_VID&000105D6_PID&000A\7&259C2D73&0&90EF4A7EED77_C00000000
+OK     USB 串行设备 (COM15)  USB\VID_303A&PID_1001&MI_00\7&264ADDFA&0&0000                                                           
+
+
+
+=== USB SERIAL (VID_303A / VID_10C4 / VID_11CA / CH340) ===
+
+Status  Present Class     FriendlyName                                   InstanceId                                   
+------  ------- -----     ------------                                   ----------                                   
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\5&EF00746&0&2          
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\5&EF00746&0&4          
+OK         True USB       USB Composite Device                           USB\VID_303A&PID_1001\D0:CF:13:12:F9:2C      
+Unknown   False Ports     USB 串行设备 (COM5)                                USB\VID_303A&PID_1001&MI_00\7&1A86F78B&0&0000
+Unknown   False Ports     USB-SERIAL CH340 (COM9)                        USB\VID_1A86&PID_7523\5&EF00746&0&4          
+Unknown   False Ports     USB-SERIAL CH340 (COM13)                       USB\VID_1A86&PID_7523\6&2CF9411D&0&4         
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\8&D3F5E86&0&0000       
+OK         True Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\7&1FD6102B&0&0000      
+Unknown   False Ports     USB-SERIAL CH340 (COM10)                       USB\VID_1A86&PID_7523\6&29399028&0&1         
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\6&23AED543&0&0000      
+Unknown   False Ports     USB-SERIAL CH340 (COM6)                        USB\VID_1A86&PID_7523\6&5D98E65&1&4          
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\7&260BC664&0&1         
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\7&260BC664&0&3         
+Unknown   False Ports     USB 串行设备 (COM11)                               USB\VID_303A&PID_1001&MI_00\7&383C4049&0&0000
+Unknown   False Ports     USB-Enhanced-SERIAL CH343 (COM20)              USB\VID_1A86&PID_55D3\5C4D039551             
+OK         True USBDevice USB JTAG/serial debug unit                     USB\VID_303A&PID_1001&MI_02\7&264ADDFA&0&0002
+Unknown   False USB       USB Composite Device                           USB\VID_303A&PID_1001\90:70:69:0B:BC:FC      
+Unknown   False USBDevice USB JTAG/serial debug unit                     USB\VID_303A&PID_1001&MI_02\7&1A86F78B&0&0002
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\8&E0B6F97&0&0000       
+Unknown   False USB       USB Composite Device                           USB\VID_303A&PID_1001\14:C1:9F:CB:29:94      
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\6&785DFD3&0&1          
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\7&A32177&0&0000        
+Unknown   False Ports     USB-SERIAL CH340 (COM14)                       USB\VID_1A86&PID_7523\6&785DFD3&0&4          
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\8&183402C4&0&0000      
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\8&57A521F&0&0000       
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\7&62D2AFB&0&0000       
+Unknown   False USBDevice USB JTAG/serial debug unit                     USB\VID_303A&PID_1001&MI_02\7&383C4049&0&0002
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\8&2432D854&0&0000      
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\6&40D6B5E&0&0000       
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\7&1069D870&0&1         
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\7&1069D870&0&2         
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\7&1069D870&0&3         
+Unknown   False Ports     Silicon Labs CP210x USB to UART Bridge (COM12) USB\VID_11CA&PID_0204\0001                   
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\6&3C62EDE&0&2          
+Unknown   False Mouse     HID-compliant mouse                            HID\VID_10C4&PID_0005\7&9848C2C&0&0000       
+Unknown   False HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\6&2CF9411D&0&1         
+OK         True Ports     USB 串行设备 (COM15)                               USB\VID_303A&PID_1001&MI_00\7&264ADDFA&0&0000
+OK         True HIDClass  USB 输入设备                                       USB\VID_10C4&PID_0005\6&29399028&0&2         
+Unknown   False USB       通用 USB 集线器                                     USB\VID_1A86&PID_8098\5&EF00746&0&1          
+
+
+

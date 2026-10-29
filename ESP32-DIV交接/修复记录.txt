@@ -1,0 +1,26 @@
+修改了wifi去认证和探测请求泛洪里堆低于8万不能启动的问题
+优化了RFID的卡片复制逻辑
+
+第一批：P0 确定性 Bug 修复（已编译通过，固件已交付）
+
+
+添加到对话
+#	修改	位置	说明
+1	deauth 帧越界写 [26]=7 → [25]=7	wifi.cpp:3094/3102/4316（3 处）	26 字节数组写下标 26，静默踩坏相邻全局变量
+2	jammer 发射脚 TX_PIN → SUBGHZ_TX_PIN	subghz.cpp:2492/2526/2762/2948（4 处）	V2 上原来打的是 GPIO3（GDO2 接收脚），正确发射脚是 GPIO6
+3	SourApple addServiceUUID 移出 loop，s_advUuidAdded 守卫	bluetooth.cpp:~1163	每轮循环往 NimBLE 内部 vector 加 UUID → 长跑堆耗尽
+4	BleSpoofer 同型 UUID 累积修复	bluetooth.cpp:~910	同 #3 守卫模式
+5	Ducky BLE 安全配置真正注册	ducky.cpp:1143	原代码 new NimBLESecurity() 配置完没进协议栈；改为静态 API setSecurityAuth(ESP_LE_AUTH_REQ_SC_BOND) + setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT)（本机 NimBLE 无 setSecurity(obj)）
+6	MAX_CREDS 20 → 19	wifi.cpp:2811	第 20 条凭据的 EEPROM 地址恰好覆盖计数器
+7	Scanner 噪声校准 /=5 → /=2	bluetooth.cpp:4313	实际只采了 2 轮，除 5 导致噪声估计偏低
+8	NRF/SubGHz 菜单死守卫 NUM_SUBMENU_ITEMS → active_submenu_size	.ino:2660/2669/3135/3144（4 处）	复制粘贴残留，拿 WiFi 菜单的 12 项给 7/6 项菜单做边界
+产物：ESP32-DIV_V2_20261012_p0fixes.bin（1,793,585B / 57%），编译 EXIT=0。
+
+第二批：Flash 写磨损节流（代码已改完，编译验证中）
+
+添加到对话
+#	修改	位置	说明
+9	setChannel() 加脏检查	wifi.cpp:~608	PacketMonitor 换信道时值没变不再写 NVS
+10	新增 eepromStageFlush() 节流提交	subghz.cpp	put 即时进 RAM 缓冲，commit 最多 5 秒一次；退出功能（feature_exit_requested）时强制落盘防丢最后一次写入
+11	4 处高频 EEPROM.commit() 换成 eepromStageFlush()	subghz.cpp：tuneToIndex()、RSSI 自动锁定、解码路径（VALUE/BITLEN/PROTO 三字段）、DECODE 频点	解码/锁定风暴下 flash 擦写从每分钟几十次降到 ≤12 次
+用户显式保存动作（saveProfile、配置导入导出）不节流，行为不变。

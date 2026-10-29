@@ -1,0 +1,36 @@
+﻿=== hrdevmon driver ===
+
+
+Name      : hrdevmon
+State     : Running
+StartMode : Boot
+PathName  : C:\WINDOWS\system32\DRIVERS\hrdevmon.sys
+
+
+
+
+Company: Beijing Huorong Network Technology Co., Ltd.
+Product: Huorong Internet Security
+Desc:    Huorong Internet Security Device Monitor
+Version: 6.0.0.0
+=== all running USB-ish filter drivers ===
+
+Name           State   PathName                                                                                                   
+----           -----   --------                                                                                                   
+BTHUSB         Running C:\WINDOWS\system32\drivers\BTHUSB.sys                                                                     
+hcmon          Running C:\WINDOWS\system32\DRIVERS\hcmon.sys                                                                      
+HidEventFilter Running C:\WINDOWS\system32\DriverStore\FileRepository\hideventfilter.inf_amd64_8b4344345b8897be\HidEventFilter.sys
+HidUsb         Running C:\WINDOWS\system32\drivers\hidusb.sys                                                                     
+hrdevmon       Running C:\WINDOWS\system32\DRIVERS\hrdevmon.sys                                                                   
+ibtusb         Running C:\WINDOWS\system32\DriverStore\FileRepository\ibtusb.inf_amd64_d9789253b6014527\ibtusb.sys                
+IntcUSB        Running C:\WINDOWS\system32\DriverStore\FileRepository\intcusb.inf_amd64_3483c60a14224d09\IntcUSB.sys              
+monitor        Running C:\WINDOWS\system32\drivers\monitor.sys                                                                    
+OrayUSBVHCI    Running C:\WINDOWS\system32\drivers\OrayUSBVHCI.sys                                                                
+usbccgp        Running C:\WINDOWS\system32\drivers\usbccgp.sys                                                                    
+USBHUB3        Running C:\WINDOWS\system32\drivers\UsbHub3.sys                                                                    
+USBSTOR        Running C:\WINDOWS\system32\drivers\USBSTOR.SYS                                                                    
+usbvideo       Running C:\WINDOWS\system32\Drivers\usbvideo.sys                                                                   
+USBXHCI        Running C:\WINDOWS\system32\drivers\USBXHCI.SYS                                                                    
+
+
+

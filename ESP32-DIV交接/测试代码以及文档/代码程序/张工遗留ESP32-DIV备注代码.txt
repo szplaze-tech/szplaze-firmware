@@ -1,0 +1,3768 @@
+/* ============================================================================
+ * ESP32-DIV —— 主入口文件（ESP32-DIV.ino）
+ * ============================================================================
+ *
+ * 【这是什么工程？】
+ *   这是一个基于 ESP32 / ESP32-S3 开发板的“多功能无线渗透测试掌机”，
+ *   类 Flipper Zero 的开源替代品。它把屏幕、按键、触摸、各类无线芯片
+ *   整合到一块小小的开发板上，做成一个可以随身携带的“黑客瑞士军刀”。
+ *
+ * 【工程做了什么事？一句话总结】
+ *   开机 → 显示 Logo → 进入 2×4 宫格主菜单 →
+ *   用户通过物理按键（PCF8574 扩展）或触摸屏选择功能 →
+ *   进入对应的子菜单/功能页 → 在使用中按 SELECT 退出返回菜单。
+ *
+ * 【硬件组成】（对应本文件内使用的库）
+ *   1. ESP32 主控                ——  整个设备的大脑（WiFi/BT 一体）
+ *   2. TFT 彩色显示屏             ——  TFT_eSPI 库驱动，显示菜单和功能界面
+ *   3. PCF8574 I2C 扩展芯片       ——  扩展出 8 个 IO 口外接物理按键
+ *      （上/下/左/右/确认 等方向键）
+ *   4. 触摸屏（叠加在 TFT 上）     ——  Touchscreen.h 读取触摸坐标，等效于点按按钮
+ *   5. NRF24L01+（2.4GHz 模块）   ——  实现 2.4GHz 扫描 / 协议干扰
+ *   6. CC1101（SubGHz 模块）      ——  实现 315/433/868/915MHz 重放与干扰
+ *   7. PN532（RFID/NFC 读卡模块） ——  实现门禁卡读取/克隆/破解等功能
+ *   8. GPS 模块                   ——  记录坐标（配合 WiFi/BT 做 Wardriving）
+ *   9. 红外收发管（IR）            ——  录制/回放/万能遥控器
+ *  10. SD 卡                      ——  保存配置、固件、抓到的数据包
+ *  11. 电池 + 背光 PWM            ——  锂电池供电，PWM 调节屏幕亮度
+ *
+ * 【菜单结构总览】
+ *   主菜单（2 列 × 4 行宫格）
+ *   ├─ 0. WiFi               → 8 项子菜单
+ *   │     Packet Monitor（抓包）/ Beacon Spammer（SSID洪水）/
+ *   │     WiFi Deauther（断连攻击）/ Probe Request Flood（探测泛洪）/
+ *   │     Deauth Detector（检测攻击）/ WiFi Scanner（扫描）/ Captive Portal（钓鱼门户）
+ *   ├─ 1. 2.4GHz (NRF24L01+) → 3 项子菜单（Scanner 扫描 / Proto Kill 协议杀手）
+ *   ├─ 2. More               → 2×2 宫格 → 再进入 IR / RFID / GPS 子菜单
+ *   ├─ 3. Settings           → 全屏设置应用（用户配置等）
+ *   ├─ 4. Bluetooth (BLE)    → 7 项子菜单（干扰/欺骗/SourApple/嗅探/扫描/键盘注入）
+ *   ├─ 5. SubGHz (CC1101)    → 4 项子菜单（重放攻击/干扰/保存的配置）
+ *   ├─ 6. Tools              → 5 项子菜单（串口监视器/固件升级/触摸校准/SD文件管理）
+ *   └─ 7. About              → 项目介绍页面
+ *
+ * 【本文件（主函数）在整个工程中的角色】
+ *   - 全局菜单状态管理（当前在主菜单还是子菜单、选中了哪一项）
+ *   - 屏幕绘制（主菜单宫格 / 子菜单列表 / More 宫格 / About 页）
+ *   - 输入分发（物理按键 + 触摸，统一抽象为 up/down/left/right/select）
+ *   - 功能启动与退出（选到某个功能 → setup() → 循环 loop() → 按 SELECT 退出）
+ *   其余各功能的实际实现分散在 wifi.cpp / bluetooth.cpp / subghz.cpp /
+ *   ir.cpp / rfid.cpp / gps.cpp / ducky.cpp / utils.cpp 等文件中。
+ *
+ * 【操作方式】
+ *   物理按键 UP / DOWN / LEFT / RIGHT 移动光标，SELECT 确认进入；
+ *   触摸屏直接点格子/列表项即可选中；功能页内触摸底部导航栏、
+ *   或按 SELECT 退出返回上一级菜单。
+ * ========================================================================== */
+
+#include <Arduino.h>     // Arduino 核心库（setup/loop/delay/millis 等）
+#include <PCF8574.h>     // PCF8574 I2C 扩展芯片驱动库（用于读取物理按键）
+#include <TFT_eSPI.h>    // TFT 彩色屏驱动库（绘制菜单/图形/文字）
+#include <Wire.h>        // I2C 总线通信库（PCF8574、GPS 等 I2C 设备都要用）
+#include "SettingsStore.h"  // 用户设置存取（主题、亮度等，存在 NVS/SD 中）
+#include "Touchscreen.h"    // 触摸屏驱动：读取触摸坐标、检测触摸手势
+#include "config.h"         // 工程级配置：引脚定义、宏开关（HAS_PCF8574_BUTTONS 等）
+#include "ducky.h"          // BLE 橡皮鸭（蓝牙键盘注入）功能实现
+#include "icon.h"           // 所有菜单用的位图图标（bitmap_icon_xxx，存于 PROGMEM 闪存）
+#include "ir.h"             // 红外遥控功能（录制/回放/万能遥控器）
+#include "gps.h"            // GPS 模块功能（Wardriver 记录 / 卫星扫描）
+#include "rfid.h"           // RFID/NFC 功能（读卡/克隆/破解等，PN532 模块）
+#include "shared.h"         // 工程共享内容：状态栏、主题、FeatureUI 框架、通用声明
+#include "utils.h"          // 通用工具函数（电池电压读取、Logo、加载动画等）
+
+// ---------------------------------------------------------------------------
+// 全局硬件对象
+// ---------------------------------------------------------------------------
+// TFT 屏幕对象（TFT_eSPI 的真彩色屏驱动库的实例）。
+// 全局唯一，之后所有绘图都是 tft.fillRect(...)、tft.drawBitmap(...) 等。
+TFT_eSPI tft = TFT_eSPI();//配置显示屏初始化
+
+// PCF8574 I2C 扩展芯片对象（地址见 config.h 中的 PCF8574_I2C_ADDR）。
+// 它把 8 个物理按键接到扩展 IO 上，pcf.digitalRead(引脚号) 即可读按键电平。
+PCF8574 pcf(PCF8574_I2C_ADDR);//配置PCF8574 I2C扩展芯片
+
+/**
+ * @brief 设置屏幕背光亮度
+ * @param value  0~255 的 PWM 占空比数值（越小越暗，255 最亮）
+ *
+ * 实现方式：用 ESP32 的 LEDC（硬件 PWM 控制器）输出一个
+ * 可调占空比的方波到背光引脚 BACKLIGHT_PIN，占空比越高屏幕越亮。
+ * 这样比直接开关背光能实现“无级调光”，省电且护眼。
+ */
+void setBrightness(uint8_t value) {
+  ledcWrite(PWM_CHANNEL, value);  // 把一个 PWM 通道的占空比设为 value
+}//设置背光亮度，用1占空比控制
+
+// ---------------------------------------------------------------------------
+// 全局状态标志
+// ---------------------------------------------------------------------------
+// feature_exit_requested —— “退出功能”请求标志。
+// 当用户在某功能页（如 WiFi 抓包、RFID 读卡）按 SELECT 键时，
+// 功能内部的 while 循环会检测到这个标志被置为 true，从而跳出循环、
+// 调用清理代码（如 Ducky::exit()）并返回上级菜单。
+// 它是主循环与功能代码之间最简单的一种“协作式退出”机制。
+bool feature_exit_requested = false;//退出功能标志
+
+// ---------------------------------------------------------------------------
+// 主菜单数据定义（2 列 × 4 行的宫格界面）
+// ---------------------------------------------------------------------------
+const int NUM_MENU_ITEMS = 8;//主菜单项数量
+const char *menu_items[NUM_MENU_ITEMS] = {//主菜单项名称
+    "WiFi",        // [0] WiFi：各种 802.11 攻击/扫描/抓包
+    "2.4GHz",      // [1] 2.4GHz：NRF24L01+ 模块的扫描与协议杀伤
+    "More",        // [2] More：再进入 IR / RFID / GPS 三组功能的分叉口
+    "Settings",    // [3] Settings：全屏设置界面（主题/亮度等）
+    "Bluetooth",   // [4] Bluetooth：BLE 干扰/欺骗/扫描/键盘注入
+    "SubGHz",      // [5] SubGHz：CC1101 模块的低频段重放/干扰
+    "Tools",       // [6] Tools：串口监视器/固件升级/触摸校准/SD 文件管理
+    "About"};      // [7] About：项目信息展示页
+
+const unsigned char *bitmap_icons[NUM_MENU_ITEMS] = {//主菜单项图标,bitmap_icon_question [] PROGMEM,在这个数组里面，PROGMEM为ARDUINO专用
+    bitmap_icon_wifi,       // WiFi 图标
+    bitmap_icon_jammer,     // 2.4GHz 干扰图标
+    bitmap_icon_dialog,     // More（更多）图标
+    bitmap_icon_setting,    // 设置图标
+    bitmap_icon_spoofer,    // 蓝牙欺骗图标
+    bitmap_icon_analyzer,   // SubGHz 分析图标
+    bitmap_icon_stat,       // 工具图标
+    bitmap_icon_question};  // About（问号）图标
+
+int current_menu_index = 0;//当前主菜单索引（0~7，对应 menu_items 中的下标）
+bool is_main_menu = false;//是否在主菜单标志
+                          // 说明：is_main_menu 用于区分“主菜单宫格”与“功能页面”
+                          // 两种状态，true 表示代码正处于主菜单导航模式。
+
+// ---------------------------------------------------------------------------
+// WiFi 子菜单数据定义
+// ---------------------------------------------------------------------------
+const int NUM_SUBMENU_ITEMS = 8;//WIFI子菜单项数量
+const char *submenu_items[NUM_SUBMENU_ITEMS] = {//子菜单项名称
+    "Packet Monitor",//数据包监听 (Packet Monitor)：开启 WiFi 网卡的混杂模式，抓取空中传输的所有 802.11 数据帧，分析周围的网络流量。
+    "Beacon Spammer",//Beacon 洪水 (Beacon Spammer)：伪造大量虚假的 WiFi 热点名称（SSID），向周围广播，让手机或电脑的 WiFi 列表瞬间被垃圾信号塞满。
+    "WiFi Deauther",//WiFi 解除认证攻击 (WiFi Deauther)：这是最经典的攻击。向目标设备（如手机）发送“解除认证”管理帧，强制断开它与路由器的连接，通常用于配合抓取握手包
+    "Probe Request Flood",//探测请求泛洪 (Probe Request Flood)：伪造大量设备发出“探测请求”帧，询问“XX WiFi 在吗？”，使附近的 AP（路由器）疲于响应，消耗其性能。
+    "Deauth Detector",//解除认证检测器 (Deauth Detector)：监听空中的数据包，如果检测到大量异常的 Deauth 帧，说明有人在附近发动攻击，起到预警作用。
+    "WiFi Scanner",//WiFi 扫描 (WiFi Scanner)：被动或主动扫描周围的 WiFi 热点，显示它们的信号强度（RSSI）、加密方式、频道等信息。
+    "Captive Portal",//钓鱼门户 (Captive Portal)：建立一个开放 WiFi，当用户连接后，强制弹出网页并要求输入密码（模仿运营商或路由器登录页），用于社会工程学钓鱼。
+    "Back to Main Menu"};
+
+// ---------------------------------------------------------------------------
+// Bluetooth (BLE) 子菜单数据定义
+// ---------------------------------------------------------------------------
+const int bluetooth_NUM_SUBMENU_ITEMS = 7;//bluetooth子菜单数量
+const char *bluetooth_submenu_items[bluetooth_NUM_SUBMENU_ITEMS] = {
+    "BLE Jammer",// [0] BLE 干扰器：在 BLE 的 40 个信道上快速发送垃圾数据或噪声，阻塞周围的 BLE 通信，让蓝牙设备无法正常工作。
+    "BLE Spoofer",// [1] BLE 欺骗器：伪造 BLE 设备的广播信息（如 MAC 地址、设备名、服务 UUID），让手机或电脑误以为附近有某个特定的蓝牙设备。
+    "Sour Apple",// [2] Sour Apple：模拟苹果设备的 BLE 广播协议，诱使 iOS 设备连接或显示特定信息，常用于测试或欺骗。
+    "Sniffer", // [3] BLE 数据包嗅探器：开启 BLE 的监听模式，捕获周围 BLE 设备的广播包和连接包，分析其内容和结构。
+    "BLE Scanner",// [4] BLE 扫描器：扫描周围的 BLE 设备，显示它们的 MAC 地址、信号强度、广播数据等信息。
+    "BLE Rubber Ducky",// [5] BLE 键盘注入：模拟成一个蓝牙键盘（HID 设备），连接到目标电脑/手机后，自动输入预设的按键序列（如执行恶意命令）。
+    "Back to Main Menu"};// [6] 返回主菜单
+
+// ---------------------------------------------------------------------------
+// 三种无线电技术的生活化比喻（帮助理解本项目涉及的频率/协议）
+// ---------------------------------------------------------------------------
+// 1. WiFi = 打电话（跨国总机）
+//    流程：你要拨号（连路由器），总机（路由器）要验证你的身份（输密码），接通后给你分配一个分机号（IP地址）。
+//    规则：你必须严格遵循电话礼仪（TCP/IP协议），如果没听清，还要说“请再说一遍”（数据重传）。
+// 2. BLE = 发短信或拍一拍（加微信好友）
+//    流程：你打开蓝牙，相当于“摇一摇”手机。周围有人也在摇（广播），你们就互加好友（配对），然后偶尔发个“早安”或“在干嘛”（心率数据、音乐暂停指令）。
+//    规则：微信（蓝牙技术联盟SIG）规定了你只能发文字、图片或定位（特定服务UUID），不能乱发弹幕。
+// 3. NRF24L01+ = 拿着大喇叭喊暗号（民间对讲机）
+//    流程：你（NRF芯片）和对面的人提前约好：“我说‘天王盖地虎’，你就回‘宝塔镇河妖’”。你们不需要拨号、不需要加微信、不需要翻译官，只要都在同一个频道（频率）上，拿起喇叭就喊。
+//    规则：没有规则！ 你们约定喊暗号（自定义数据包），外人听不懂也无所谓。
+
+// ---------------------------------------------------------------------------
+// 2.4GHz (NRF24L01+) 子菜单数据定义
+// ---------------------------------------------------------------------------
+const int nrf_NUM_SUBMENU_ITEMS = 3;//nrf子菜单数量
+const char *nrf_submenu_items[nrf_NUM_SUBMENU_ITEMS] = {
+    "Scanner",   // [0] NRF24L01+ 扫描器：扫描周围的 2.4GHz 信号，显示信号强度、频率、数据包等信息。
+    "Proto Kill",// [1] NRF24L01+ 协议杀手：向目标设备发送伪造的数据包或干扰信号，破坏其通信协议，使其无法正常工作。
+    "Back to Main Menu"};// [2] 返回主菜单
+
+// ---------------------------------------------------------------------------
+// SubGHz 子菜单数据定义
+// ---------------------------------------------------------------------------
+// subghz 不是一种通信协议，而是一个“频段”（Sub-Gigahertz，即低于 1 GHz 的射频频段，
+// 比如常见的 315MHz、433MHz、868MHz、915MHz）。
+// 通过控制 CC1101 这款芯片，ESP32 可以在 SubGHz 频段上发送和接收无线信号，
+// 实现对门禁、遥控器、传感器等设备的控制和分析。
+const int subghz_NUM_SUBMENU_ITEMS = 4;//subghz子菜单数量
+const char *subghz_submenu_items[subghz_NUM_SUBMENU_ITEMS] = {
+    "Replay Attack",// [0] SubGHz 重放攻击：捕获目标设备的无线信号（如门禁、遥控器），然后重新发送相同的信号，达到“开门”或“触发”的效果。
+    "SubGHz Jammer",// [1] SubGHz 干扰器：在 SubGHz 频段（315/433/868/915 MHz）发送噪声或垃圾信号，阻塞周围的无线通信，让设备无法正常工作。
+    "Saved Profile",// [2] SubGHz 保存的配置文件：保存或加载之前捕获的 SubGHz 信号数据包，方便重复使用或分析。
+    "Back to Main Menu"};// [3] 返回主菜单
+
+// ---------------------------------------------------------------------------
+// Tools 工具子菜单数据定义
+// ---------------------------------------------------------------------------
+const int tools_NUM_SUBMENU_ITEMS = 5;//tools子菜单数量
+const char *tools_submenu_items[tools_NUM_SUBMENU_ITEMS] = {
+    "Serial Monitor",// [0] 串口监视器：实时显示通过串口接收到的数据，方便调试和分析。
+    "Update Firmware",// [1] 固件更新：将新的程序代码上传到设备，升级功能或修复问题。可用 SD 卡或 Wi-Fi (Web OTA) 两种方式。
+    "Touch Calibrate",// [2] 触摸屏校准：调整触摸屏的灵敏度和准确性，确保触控操作与显示位置一致。
+    "SD File Manager",// [3] SD 文件管理器：管理和操作 SD 卡上的文件，如复制、删除、重命名等。
+    "Back to Main Menu"};// [4] 返回主菜单
+
+// ---------------------------------------------------------------------------
+// More 菜单的“分页层级”定义
+// ---------------------------------------------------------------------------
+// More（主菜单第 2 项）不像 WiFi/BLE 那样只有一个子菜单列表，
+// 而是先显示一个 2×2 的宫格（IR Remote / RFID/NFC / GPS / Main Menu），
+// 点进去之后再进入各自的真正的功能子菜单。
+// 这里的 other_layer 就记录“你现在在 More 的哪一层”：
+static constexpr uint8_t OTHER_LAYER_HOME = 0;// [0] More 主菜单（2×2 宫格，四个入口）
+static constexpr uint8_t OTHER_LAYER_IR   = 1;// [1] IR 子菜单（红外遥控功能列表）
+static constexpr uint8_t OTHER_LAYER_RFID = 2;// [2] RFID 子菜单（RFID/NFC 功能列表）
+static constexpr uint8_t OTHER_LAYER_GPS  = 3;// [3] GPS 子菜单（GPS 功能列表）
+
+// ---------------------------------------------------------------------------
+// More 首页（2×2 宫格）数据定义
+// ---------------------------------------------------------------------------
+const int other_NUM_SUBMENU_ITEMS = 4;//other子菜单数量
+static constexpr int OTHER_GRID_COLS = 2;// 排成 2 列（2×2 网格）
+const char *other_submenu_items[other_NUM_SUBMENU_ITEMS] = {
+    "IR Remote",// [0] 点击后进入红外子菜单（录制/万能遥控器等）
+    "RFID/NFC",// [1] 点击后进入 RFID 子菜单（读卡/克隆/破解等）
+    "GPS",// [2] 点击后进入 GPS 子菜单（Wardriver 等）
+    "Main Menu"};// [3] 返回主菜单
+
+// ---------------------------------------------------------------------------
+// RFID/NFC 子菜单数据定义（基于 PN532 模块）
+// ---------------------------------------------------------------------------
+const int rfid_NUM_SUBMENU_ITEMS = 9;// RFID 子菜单项数量
+const char *rfid_submenu_items[rfid_NUM_SUBMENU_ITEMS] = {
+    "Card Reader",   // [0] 读取卡片（如门禁卡、饭卡）的 UID（唯一序列号）和存储的数据（扇区内容）。
+    "Card Clone",    // [1] 将刚才读到的 UID 和数据，写入一张空白可写卡（如 CUID 卡）。
+    "Erase",         // [2] 清空可写卡（如 T5577 或 Mifare Classic）中的数据，使其恢复出厂空白状态。
+    "Dump",          // [3] 将整张卡的所有扇区（全部数据块）完整导出并保存到 SD 卡或屏幕显示。
+    "Decode Access", // [4] 分析卡片扇区的访问控制条件（AC位），判断哪些块是只读的、哪些需要密钥验证。
+    "Jam Reader",    // [5] 发射特定频率的射频噪声，阻塞读卡器与卡片的通信，让读卡器读不到任何卡。
+    "Tag Disrupt",   // [6] 向卡片发送恶意指令，破坏卡片内部逻辑，使其暂时或永久失效。
+    "Disrupt Emulate",// [7] 先模拟成一张正常卡，然后发送恶意数据包，破坏读卡器与合法卡的配对状态。
+    "Back to Main Menu"};// [8] 返回 More 首层
+
+// ---------------------------------------------------------------------------
+// GPS 子菜单数据定义
+// ---------------------------------------------------------------------------
+const int gps_NUM_SUBMENU_ITEMS = 3;// GPS 子菜单项数量
+const char *gps_submenu_items[gps_NUM_SUBMENU_ITEMS] = {
+    "Wardriver",       // [0] 边走边扫：开启后，设备会实时记录 GPS 坐标，并同时扫描周围的 WiFi 热点和蓝牙设备，将“位置信息”与“无线信号”绑定，存入 SD 卡。
+    "Satellite Scanner",// [1] 搜星诊断：显示当前能接收到多少颗 GPS 卫星的信号，以及每颗卫星的编号、仰角、信噪比（信号强度）。
+    "Back to Main Menu"};// [2] 返回 More 首层
+
+// ---------------------------------------------------------------------------
+// IR 红外子菜单数据定义
+// ---------------------------------------------------------------------------
+const int ir_NUM_SUBMENU_ITEMS = 4;// IR 子菜单项数量
+const char *ir_submenu_items[ir_NUM_SUBMENU_ITEMS] = {
+    "Record",       // [0] 录制：将设备上的红外接收头对准家中的遥控器（如电视、空调），按下遥控器按钮，设备会记录下这段红外信号的波形（脉冲序列）。
+    "Saved Profile",// [1] 已保存的配置：浏览 SD 卡或内存中之前保存好的红外信号文件，选择其中一个，然后通过红外发射头发送出去，模拟原装遥控器。
+    "Universal Controller",// [2] 万能遥控器：设备内置了常见品牌（如索尼、三星、格力、美的）的通用红外协议库（NEC、Sony SIRC、RC-5 等）。你不需要录制，直接选择品牌和功能（如“音量+”、“开关”），设备就能发送匹配的信号。
+    "Back to Main Menu"};// [3] 返回 More 首层
+
+// ---------------------------------------------------------------------------
+// About / Settings 的“占位”子菜单（实际上它们用全屏页面，不走列表）
+// ---------------------------------------------------------------------------
+const int about_NUM_SUBMENU_ITEMS = 1;
+const char *about_submenu_items[about_NUM_SUBMENU_ITEMS] = {
+    "Back to Main Menu"};
+
+const int setting_NUM_SUBMENU_ITEMS = 1;
+const char *setting_submenu_items[setting_NUM_SUBMENU_ITEMS] = {
+    "Back to Main Menu"};
+
+// ---------------------------------------------------------------------------
+// 菜单导航核心状态变量
+// ---------------------------------------------------------------------------
+int current_submenu_index = 0;//当前子菜单索引
+                             // 说明：既用于主菜单宫格（0~7），也用于子菜单列表（0~size-1），
+                             // 哪个生效取决于当前是 in_sub_menu==false（主菜单）还是 true（子菜单）。
+bool in_sub_menu = false;//是否在子菜单里面（true = 在列表里，false = 在主菜单）
+uint8_t other_layer = OTHER_LAYER_HOME;//More 菜单你翻到哪一页了（首页、IR、RFID、GPS 四选一）
+int last_other_menu_index = -1;//More 首页上一次选中的是哪个方块（用来刷新高亮，省得重画整个屏幕）
+bool other_menu_grid_initialized = false;//More 首页的 4 个方块画过了没有（第一次画全图，后面只改高亮）
+
+// 说明：active_submenu_icons 是一个全局“活动图标套装”指针，
+//      它指向下面某个具体图标数组（wifi_submenu_icons / nrf_submenu_icons 等）。
+//      这样 displaySubmenu() 就只用这一个指针取图标，无需为每个菜单写死。
+const unsigned char **active_submenu_icons = nullptr;//当前活动子菜单对应的图标数组指针
+const char **active_submenu_items = nullptr;//当前这个子菜单里所有选项的文字列表（比如 WiFi 的 8 个名字）
+int active_submenu_size = 0;//	这个列表有多少项（用于防止上下键越界）
+
+// ---------------------------------------------------------------------------
+// 各子菜单的“图标套装”（每个数组的下标与对应子菜单项一一对应）
+// 注意：下面这些数组定义只是“图标数据表”，具体哪一套会被使用，
+//       由 updateActiveSubmenu() 根据 current_menu_index 动态指派给
+//       active_submenu_icons 这个“万能插头”。
+// ---------------------------------------------------------------------------
+const unsigned char *wifi_submenu_icons[NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_wifi,        // [0] Packet Monitor — WiFi 图标
+    bitmap_icon_antenna,     // [1] Beacon Spammer — 天线图标
+    bitmap_icon_wifi_jammer, // [2] WiFi Deauther — 干扰图标
+    bitmap_icon_Skull_3,     // [3] Probe Request Flood — 骷髅图标
+    bitmap_icon_eye2,        // [4] Deauth Detector — 眼睛图标
+    bitmap_icon_jammer,      // [5] WiFi Scanner — 扫描图标
+    bitmap_icon_bash,        // [6] Captive Portal — 终端图标
+    bitmap_icon_go_back      // [7] 返回主菜单 — 返回箭头图标
+};
+
+const unsigned char *bluetooth_submenu_icons[bluetooth_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_ble_jammer,  // [0] BLE Jammer — BLE 干扰图标
+    bitmap_icon_spoofer,     // [1] BLE Spoofer — 欺骗图标
+    bitmap_icon_apple,       // [2] Sour Apple — 苹果图标
+    bitmap_icon_analyzer,    // [3] Sniffer — 分析图标
+    bitmap_icon_graph,       // [4] BLE Scanner — 图表图标
+    bitmap_icon_rubber_ducky,// [5] BLE Rubber Ducky — 橡皮鸭图标
+    bitmap_icon_go_back      // [6] 返回主菜单
+};
+
+const unsigned char *nrf_submenu_icons[nrf_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_scanner,  // [0] Scanner — 扫描图标
+    bitmap_icon_kill,     // [1] Proto Kill — 击杀图标
+    bitmap_icon_go_back   // [2] 返回主菜单
+};
+
+const unsigned char *subghz_submenu_icons[subghz_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_antenna,    // [0] Replay Attack — 天线图标
+    bitmap_icon_no_signal,  // [1] SubGHz Jammer — 无信号图标
+    bitmap_icon_list,       // [2] Saved Profile — 列表图标
+    bitmap_icon_go_back     // [3] 返回主菜单
+};
+
+const unsigned char *tools_submenu_icons[tools_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_bash,   // [0] Serial Monitor — 终端图标
+    bitmap_icon_follow, // [1] Update Firmware — 更新图标
+    bitmap_icon_undo,   // [2] Touch Calibrate — 校准/撤销图标
+    bitmap_icon_sdcard, // [3] SD File Manager — SD 卡图标
+    bitmap_icon_go_back // [4] 返回主菜单
+};
+
+const unsigned char *other_submenu_icons[other_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_led,        // [0] IR Remote — 红外 LED 图标
+    bitmap_icon_rfid_chip,  // [1] RFID/NFC — 芯片图标
+    bitmap_icon_satellite,  // [2] GPS — 卫星图标
+    bitmap_icon_go_back     // [3] Main Menu — 返回图标
+};
+
+const unsigned char *rfid_submenu_icons[rfid_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_magnifying_glass, // [0] Card Reader — 放大镜图标
+    bitmap_icon_follow,           // [1] Card Clone — 复制图标
+    bitmap_icon_recycle,          // [2] Erase — 回收站/清空图标
+    bitmap_icon_dot_matrix,       // [3] Dump — 点阵图标
+    bitmap_icon_key,              // [4] Decode Access — 密钥图标
+    bitmap_icon_kill,             // [5] Jam Reader — 干扰图标
+    bitmap_icon_flash,            // [6] Tag Disrupt — 闪电图标
+    bitmap_icon_devil,            // [7] Disrupt Emulate — 恶魔图标
+    bitmap_icon_go_back           // [8] 返回 More 首层
+};
+
+const unsigned char *gps_submenu_icons[gps_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_satellite,       // [0] Wardriver — 卫星图标
+    bitmap_icon_satellite_dish,  // [1] Satellite Scanner — 卫星锅图标
+    bitmap_icon_go_back          // [2] 返回 More 首层
+};
+
+const unsigned char *ir_submenu_icons[ir_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_led,           // [0] Record — 红外 LED 图标
+    bitmap_icon_list,          // [1] Saved Profile — 列表图标
+    bitmap_icon_remote_control,// [2] Universal Controller — 遥控器图标
+    bitmap_icon_go_back        // [3] 返回 More 首层
+};
+
+const unsigned char *about_submenu_icons[about_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_go_back
+};
+
+const unsigned char *setting_submenu_icons[setting_NUM_SUBMENU_ITEMS] = {
+    bitmap_icon_go_back
+};
+
+/**
+ * @brief 根据当前主菜单项，把“活动子菜单”的指针指向对应的一套菜单数据
+ *
+ * 作用：updateActiveSubmenu 本质上就是屏幕绘制函数的“万能插头”。
+ * 它本身不存任何实际数据，只负责动态地把全局指针 active_submenu_items /
+ * active_submenu_size / active_submenu_icons 指向当前子菜单（WiFi、蓝牙或
+ * RFID 等）对应的文字数组和图标数组。
+ *
+ * 好处：当你在菜单间切换时，程序只要把这个“插头”插到对应的套装上，
+ * 下方的 displaySubmenu() 绘图函数就能完全不用区分是哪个菜单，
+ * 统一用 active_submenu_icons / active_submenu_items 来取数据绘制，
+ * 实现了 UI 渲染逻辑的通用化和代码复用。
+ */
+void updateActiveSubmenu() {
+    switch (current_menu_index) {
+        case 0:  // 主菜单 [0] WiFi → 指向 WiFi 子菜单
+            active_submenu_items = submenu_items;
+            active_submenu_size = NUM_SUBMENU_ITEMS;
+            active_submenu_icons = wifi_submenu_icons;
+            break;
+        case 1:  // 主菜单 [1] 2.4GHz → 指向 NRF24L01+ 子菜单
+            active_submenu_items = nrf_submenu_items;
+            active_submenu_size = nrf_NUM_SUBMENU_ITEMS;
+            active_submenu_icons = nrf_submenu_icons;
+            break;
+        case 2:  // 主菜单 [2] More → 根据 other_layer 指向 IR / RFID / GPS / 首页
+            if (other_layer == OTHER_LAYER_HOME) {
+                active_submenu_items = other_submenu_items;
+                active_submenu_size = other_NUM_SUBMENU_ITEMS;
+                active_submenu_icons = other_submenu_icons;
+            } else if (other_layer == OTHER_LAYER_IR) {
+                active_submenu_items = ir_submenu_items;
+                active_submenu_size = ir_NUM_SUBMENU_ITEMS;
+                active_submenu_icons = ir_submenu_icons;
+            } else if (other_layer == OTHER_LAYER_RFID) {
+                active_submenu_items = rfid_submenu_items;
+                active_submenu_size = rfid_NUM_SUBMENU_ITEMS;
+                active_submenu_icons = rfid_submenu_icons;
+            } else if (other_layer == OTHER_LAYER_GPS) {
+                active_submenu_items = gps_submenu_items;
+                active_submenu_size = gps_NUM_SUBMENU_ITEMS;
+                active_submenu_icons = gps_submenu_icons;
+            } else {
+                // 兜底：意外值也回退到 More 首页
+                active_submenu_items = other_submenu_items;
+                active_submenu_size = other_NUM_SUBMENU_ITEMS;
+                active_submenu_icons = other_submenu_icons;
+            }
+            break;
+        case 3:  // 主菜单 [3] Settings → 全屏设置页，不用子菜单列表
+            active_submenu_items = nullptr;
+            active_submenu_size = 0;
+            active_submenu_icons = nullptr;
+            break;
+        case 4:  // 主菜单 [4] Bluetooth → 指向 BLE 子菜单
+            active_submenu_items = bluetooth_submenu_items;
+            active_submenu_size = bluetooth_NUM_SUBMENU_ITEMS;
+            active_submenu_icons = bluetooth_submenu_icons;
+            break;
+        case 5:  // 主菜单 [5] SubGHz → 指向 SubGHz 子菜单
+            active_submenu_items = subghz_submenu_items;
+            active_submenu_size = subghz_NUM_SUBMENU_ITEMS;
+            active_submenu_icons = subghz_submenu_icons;
+            break;
+        case 6:  // 主菜单 [6] Tools → 指向 Tools 子菜单
+            active_submenu_items = tools_submenu_items;
+            active_submenu_size = tools_NUM_SUBMENU_ITEMS;
+            active_submenu_icons = tools_submenu_icons;
+            break;
+        case 7:  // 主菜单 [7] About → 全屏页面，不用子菜单列表
+            active_submenu_items = nullptr;
+            active_submenu_size = 0;
+            active_submenu_icons = nullptr;
+            break;
+
+        default:
+            // 未知主菜单索引：全部置空，避免越界访问
+            active_submenu_items = nullptr;
+            active_submenu_size = 0;
+            active_submenu_icons = nullptr;
+            break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 触摸导航栏（Touch Nav Bar）相关状态与函数
+// ---------------------------------------------------------------------------
+// 说明：在部分功能页（如 Tools、RFID、GPS 等）屏幕底部会显示一排
+//       5 个可触摸的“虚拟按键”（◀ ▼ ✕ ▲ ▶），等效于物理按键。
+//       这一整套机制由下面的状态变量和函数实现。
+static bool touchButtonInputEnabled = false;
+//决定底部那排触摸按钮是否启用。只有在 Tools 或 RFID 等需要触摸输入的功能里，它才会被设为 true，平时是关着的，防止你在主菜单误触底部。
+static bool touchButtonCueDrawn = false;
+//记录这排按钮已经画在屏幕上了没有。防止程序重复绘制导致屏幕闪烁或资源浪费，画过一次就锁住。
+static bool s_touchNavLabelsConfigured = false;
+//记录你有没有给这五个按钮起过自定义名字（比如把中间的“确认”改成“开始”）。用于判断该画默认图标还是你指定的文字。
+static bool s_touchNavHeld[5] = {false, false, false, false, false};
+//一个长度为 5 的数组，分别记录五个按钮刚才是不是被按着的。用来消除重复触发——你按下不放，它只会触发一次“点击”动作，防止因为手指停留而反复执行命令。
+#if HAS_PCF8574_BUTTONS
+static bool s_pcfButtonLastState[8] = {true, true, true, true, true, true, true, true};//按键初始化：记录 8 个物理按键上一次的电平，用于检测“按下沿（Edge）”
+#endif
+static FeatureUI::Button s_touchNavBtns[5];
+static const char* s_touchNavLabels[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+static constexpr int16_t TOUCH_NAV_BAR_H = (FeatureUI::FOOTER_H * 4) / 5;  // 触摸导航栏的高度  标准的80%
+
+/**
+ * @brief 把“触摸槽位索引”转换为对应的物理按键宏（BTN_XXX）
+ * @param idx  0~4：触摸栏 5 个槽位（从左到右）
+ * @return 对应的按键宏（BTN_LEFT/DOWN/SELECT/UP/RIGHT），无效索引返回 -1
+ *
+ * 作用：触摸驱动告诉你“用户点了槽位 2”，这个函数就返回 BTN_SELECT，
+ *      这样程序就能像处理物理按键一样处理这次触摸。
+ */
+static int touchNavPinForIndex(int idx) {
+  switch (idx) {
+    case 0: return BTN_LEFT;
+    case 1: return BTN_DOWN;
+    case 2: return BTN_SELECT;// 中间槽位 = 确认/返回键
+    case 3: return BTN_UP;
+    case 4: return BTN_RIGHT;
+    default: return -1;//在 C/C++ 编程中，-1 是公认的“错误/无效”标志。 如果 idx 是 5、6、100 或者其他任何数，执行这里
+  }
+}
+
+/**
+ * @brief 启用/禁用底部触摸导航栏
+ * @param enabled  true=显示并启用触摸按键；false=隐藏并清理相关状态
+ *
+ * 启用时会立刻把导航栏画出来；禁用时会清掉自定义文字和按住状态，
+ * 避免下次打开还残留旧的按钮文字。
+ */
+void setTouchButtonInputEnabled(bool enabled) {// ← enabled 是传进来的参数
+  if (touchButtonInputEnabled != enabled) {  // ← 判断“当前状态”和“目标状态”是否不同
+    touchButtonCueDrawn = false;
+    if (!enabled) {  // 要关闭时，清理所有临时状态
+      for (int i = 0; i < 5; ++i) {
+        s_touchNavLabels[i] = nullptr;   // 清除自定义文字
+      }
+      s_touchNavLabelsConfigured = false;
+      for (int i = 0; i < 5; ++i) {
+        s_touchNavHeld[i] = false;       // 清除按住记忆
+      }
+    }
+  }
+  touchButtonInputEnabled = enabled;// ← 把状态更新为目标值
+#if TOUCH_BUTTON_CUE_ENABLED//条件编译：只有编译开关打开时才真正绘制
+  if (enabled && feature_active) {
+    drawTouchNavBar();
+    touchButtonCueDrawn = true;
+  }
+#endif
+}
+
+/** @brief 当前功能页是否启用了触摸导航栏（供其他功能代码查询） */
+bool featureHasTouchNavBar() {//触摸导航栏
+#if TOUCH_BUTTON_CUE_ENABLED
+  return touchButtonInputEnabled && feature_active;
+#else
+  return false;
+#endif
+}
+
+/**
+ * @brief 自定义底部触摸栏 5 个按钮的文字（而不是默认的箭头图标）
+ * @param left/down/center/up/right  5 个按钮的文字；传 nullptr 表示该槽位留空
+ *
+ * 调用后它会自动标记需要重绘，让新文字显示出来。
+ * 常用于进入某个功能后，把中间按钮从“确认”改成“开始”或“读卡”等更贴合的指令。
+ */
+void setTouchNavLabels(const char* left, const char* down, const char* center,
+                       const char* up, const char* right) {
+  s_touchNavLabels[0] = left;
+  s_touchNavLabels[1] = down;
+  s_touchNavLabels[2] = center;
+  s_touchNavLabels[3] = up;
+  s_touchNavLabels[4] = right;
+  s_touchNavLabelsConfigured = true;
+  invalidateTouchButtonCue();  // 标记“需要重绘”
+}
+
+/** @brief 使导航栏进入“未绘制”状态（下次循环会重新画） */
+void invalidateTouchButtonCue() {
+  touchButtonCueDrawn = false;
+}
+
+/** @brief 清除 5 个触摸按钮的“按住”历史记录 */
+void resetTouchNavHeldState() {
+  for (int i = 0; i < 5; ++i) {
+    s_touchNavHeld[i] = false;
+  }
+}
+
+/** @brief 强制重绘底部触摸按钮栏（先失效再重画） */
+void redrawTouchButtonBar() {
+  invalidateTouchButtonCue();
+  drawTouchButtonCue();
+}
+
+/** @brief 计算 5 个触摸按钮在屏幕上的矩形坐标（均分宽度，贴屏幕底部） */
+static void layoutTouchNavBtns() {
+  const int barY = tft.height() - TOUCH_NAV_BAR_H;  // 导航栏顶部 Y
+  const int barH = TOUCH_NAV_BAR_H;                 // 导航栏高度
+  const int totalW = tft.width();                   // 屏幕总宽
+  const int cellW = totalW / 5;                     // 每个按钮等分宽度
+
+  for (int i = 0; i < 5; ++i) {
+    const int x = i * cellW;
+    const int w = (i == 4) ? (totalW - x) : cellW;  // 最右按钮补足剩余宽度
+    s_touchNavBtns[i] = {
+      (int16_t)x, (int16_t)barY, (int16_t)w, (int16_t)barH,
+      nullptr, FeatureUI::ButtonStyle::Secondary, false};
+  }
+}
+
+/** @brief 把过长的按钮文字裁剪成 "...xxx..." 形式，保证能放进按钮宽度内 */
+static String fitTouchNavLabel(const char* label, int maxWidth) {
+  if (!label || !label[0]) {//label[0] 等价于 *label；空字符串直接返回空
+    return String();
+  }
+  String out = label;// 复制一份原始文字
+  if (tft.textWidth(out) <= maxWidth) {  // 本来就放得下就直接返回
+    return out;
+  }
+  // 逐字去掉末尾，直到“加省略号”后能放下为止
+  while (out.length() > 1 && tft.textWidth(out + "...") > maxWidth) {
+    out.remove(out.length() - 1);//remove,length都是String类的方法：删掉最后一个字符
+  }
+  return out + "...";//把裁剪后的 out 和 "..." 组合成一个完整的显示字符串返回。
+}
+
+/** @brief 绘制底部触摸导航栏（背景 + 分隔线 + 5 个按钮的图标/文字） */
+static void drawTouchNavBar() {
+  static const unsigned char* kIcons[5] = {  // 默认 5 个按钮图标
+    bitmap_icon_LEFT,
+    bitmap_icon_DOWN,
+    bitmap_icon_go_back,   // 中间 = 返回/确认
+    bitmap_icon_UP,
+    bitmap_icon_RIGHT,
+  };
+  constexpr int kIconSize = 16;
+
+  const int barY = tft.height() - TOUCH_NAV_BAR_H;
+  const int barH = TOUCH_NAV_BAR_H;
+  const int barW = tft.width();
+
+  layoutTouchNavBtns();  // 先算好每个按钮的位置
+
+  tft.fillRect(0, barY, barW, barH, UI_FG);        // 画背景条
+  tft.drawFastHLine(0, barY, barW, UI_LINE);       // 画顶部横线
+
+  for (int i = 0; i < 5; ++i) {
+    const auto& b = s_touchNavBtns[i];
+    if (i > 0) {
+      tft.drawFastVLine(b.x, barY + 3, barH - 6, UI_LINE);  // 按钮之间画竖分隔线
+    }
+
+    if (s_touchNavLabels[i] && s_touchNavLabels[i][0]) {   // 有自定义文字 → 画文字
+      tft.setTextDatum(MC_DATUM);                          // 居中对齐
+      const uint16_t txtColor = (i == 2) ? UI_ICON : UI_TEXT;
+      tft.setTextColor(txtColor, UI_FG);
+      const String fit = fitTouchNavLabel(s_touchNavLabels[i], b.w - 8);
+      tft.drawString(fit, b.x + b.w / 2, b.y + b.h / 2, 1);
+    } else {  // 没有自定义文字 → 画默认箭头图标
+      const int ix = b.x + (b.w - kIconSize) / 2;
+      const int iy = b.y + (b.h - kIconSize) / 2;
+      // 如果配置过自定义标签但某个槽位是 nullptr → 用灰色圆点表示“禁用位”
+      const bool inactiveSlot = s_touchNavLabelsConfigured && !s_touchNavLabels[i];
+      const unsigned char* icon = inactiveSlot ? bitmap_icon_dots : kIcons[i];
+      const uint16_t iconColor = inactiveSlot ? LIGHT_GRAY : ((i == 2) ? UI_ICON : UI_TEXT);
+      tft.drawBitmap(ix, iy, icon, kIconSize, kIconSize, iconColor);
+    }
+  }
+
+  // 恢复默认文字对齐和字体，避免影响后续绘图
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextFont(1);
+  tft.setTextSize(1);
+  tft.setTextColor(UI_TEXT, FEATURE_BG);
+}
+
+/** @brief 由主循环调用：如果导航栏还没画过且应当显示，就画一次 */
+void maintainTouchNavBar() {
+#if TOUCH_BUTTON_CUE_ENABLED
+  if (!touchButtonInputEnabled || !feature_active || touchButtonCueDrawn) {
+    return;
+  }
+  drawTouchNavBar();
+  touchButtonCueDrawn = true;
+#endif
+}
+
+/** @brief 清空功能内容区域（保留底部导航栏区域不清） */
+void featureClearContent(uint16_t color) {
+  const int bottom = touchNavContentBottomY();  // 内容区域的底部边界
+  if (bottom > 0) {
+    tft.fillRect(0, 0, tft.width(), bottom, color);
+  } else {
+    tft.fillScreen(color);
+  }
+}
+
+/** @brief 当前应给底部导航栏预留多少高度（未启用时为 0） */
+int16_t touchNavReservedHeight() {
+#if TOUCH_BUTTON_CUE_ENABLED
+  if (touchButtonInputEnabled && feature_active) {
+    return TOUCH_NAV_BAR_H;
+  }
+#endif
+  return 0;
+}
+
+/** @brief 功能内容区域的底部 Y 坐标（即屏幕上可用内容的最底一行下方） */
+int16_t touchNavContentBottomY() {
+  return (int16_t)(tft.height() - touchNavReservedHeight());
+}
+
+/** @brief 绘制/刷新底部触摸按钮栏（带条件判断，由外部主动调用） */
+void drawTouchButtonCue() {
+#if TOUCH_BUTTON_CUE_ENABLED
+  if (!touchButtonInputEnabled || !feature_active) {
+    return;
+  }
+  drawTouchNavBar();
+  touchButtonCueDrawn = true;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// 按键抽象层：把【物理按键】和【触摸导航栏虚拟按键】统一起来
+// ---------------------------------------------------------------------------
+// 说明：所有菜单代码只调用 isButtonPressed(BTN_XXX) / isButtonPressedEdge(BTN_XXX)，
+//      函数内部自动先查物理按键（PCF8574），再查屏幕底部触摸导航栏，
+//      对上层代码完全透明——无论是按实体键还是点屏幕，效果一样。
+
+/** @brief 反向查找：哪个触摸槽位对应给定的物理按键宏（BTN_XXX） */
+static int touchNavIndexForPin(int buttonPin) {
+  for (int i = 0; i < 5; ++i) {
+    if (touchNavPinForIndex(i) == buttonPin) {  // 槽位 i 映射到该按键？
+      return i;
+    }
+  }
+  return -1;  // 找不到 → 无效槽位
+}
+
+/** @brief 检查某个触摸槽位此刻是否被手指按住（且手指落在导航栏区域） */
+static bool isTouchNavSlotDown(int idx) {
+  if (idx < 0 || !feature_active || !touchButtonInputEnabled) {
+    return false;  // 未启用触摸导航，或索引无效 → 肯定没按
+  }
+
+  int x = 0;
+  int y = 0;
+  if (!readTouchXYDismiss(x, y)) {
+    return false;  // 当前没有触摸事件（readTouchXYDismiss 会顺便消抖）
+  }
+
+  layoutTouchNavBtns();
+
+  const int stripTop = tft.height() - TOUCH_NAV_BAR_H;
+  if (y < stripTop) {
+    return false;  // 手指点在了导航栏上方的功能内容区，不算导航按钮
+  }
+
+  return FeatureUI::hit(s_touchNavBtns, 5, x, y) == idx;  // 命中哪个槽位
+}
+
+/** @brief 读取物理按键（PCF8574 扩展 IO）：按下返回 true（低电平有效） */
+bool isPhysicalButtonPressed(int buttonPin) {
+#if HAS_PCF8574_BUTTONS
+  if (getPcf8574Address() != 0) {       // 只有探测到 PCF8574 芯片才读
+    return !pcf.digitalRead(buttonPin); // 按键按下 = 该引脚被拉低 = !1 → true
+  }
+#endif
+  return false;  // 未启用物理按键 → 恒为 false
+}
+
+/** @brief 触摸导航栏上是否按下了对应“键”（把触摸映射成按键） */
+bool isTouchNavButtonPressed(int buttonPin) {
+  const int idx = touchNavIndexForPin(buttonPin);
+  if (idx < 0) {
+    return false;
+  }
+  return isTouchNavSlotDown(idx);
+}
+
+/** @brief 统一按键查询：物理按键 OR 触摸导航栏（任一被按都视为按下） */
+bool isButtonPressed(int buttonPin) {
+  if (isPhysicalButtonPressed(buttonPin)) {
+    return true;
+  }
+  return isTouchNavButtonPressed(buttonPin);
+}
+
+/** @brief 触摸导航按键的“按下沿”检测：只在按下那一刻返回 true 一次 */
+bool isTouchNavButtonPressedEdge(int buttonPin) {
+  if (!feature_active || !touchButtonInputEnabled) {
+    return false;
+  }
+
+  const int navIdx = touchNavIndexForPin(buttonPin);
+  if (navIdx < 0) {
+    return false;
+  }
+
+  const bool down = isTouchNavSlotDown(navIdx);
+  const bool edge = down && !s_touchNavHeld[navIdx];  // 之前是松开、现在是按下 → 边沿
+  s_touchNavHeld[navIdx] = down;                       // 记录最新状态
+  return edge;
+}
+
+/** @brief 统一“按下沿”检测：物理按键（去抖） + 触摸导航栏 */
+bool isButtonPressedEdge(int buttonPin) {
+#if HAS_PCF8574_BUTTONS
+  if (getPcf8574Address() != 0) {
+    const int idx = buttonPin % 8;                 // 只保留 0~7 的数据位
+    const bool cur = pcf.digitalRead(buttonPin);
+    const bool edge = !cur && s_pcfButtonLastState[idx];  // 低电平且上一轮是高 → 刚按下
+    s_pcfButtonLastState[idx] = cur;              // 更新上一轮电平
+    if (edge) {
+      return true;
+    }
+  }
+#endif
+
+  return isTouchNavButtonPressedEdge(buttonPin);
+}
+
+/** @brief 退出功能的统一判定：按 SELECT（物理键或触摸中间键）就算退出 */
+bool featureExitButtonPressed() {
+  return isPhysicalButtonPressed(BTN_SELECT) || isTouchNavButtonPressed(BTN_SELECT);
+}
+
+/** @brief 功能不可用时弹通知提示（如 BLE Ducky 需要 S3 芯片） */
+static void showFeatureUnavailable(const char* featureName, const char* requirement) {
+  feature_active = false;
+  feature_exit_requested = false;
+  showNotification(featureName, requirement);  // 屏幕顶部弹提示条
+  delay(250);
+}
+
+/** @brief 运行“BLE Rubber Ducky”（蓝牙键盘注入）功能 */
+static void runBleDuckyFeature() {
+#if FEATURE_BLE_DUCKY   // 只有 ESP32-S3 编译开关打开时才编译
+  current_submenu_index = 5;
+  in_sub_menu = true;
+  feature_active = true;
+  feature_exit_requested = false;
+  Ducky::enter();       // 初始化蓝牙键盘（HID）并准备注入脚本
+  while (current_submenu_index == 5 && !feature_exit_requested) {
+      current_submenu_index = 5;
+      in_sub_menu = true;
+      Ducky::loop();    // 循环执行 Ducky 脚本中的按键序列
+  }
+
+  Ducky::exit();        // 结束后断开蓝牙、清理状态
+  if (feature_exit_requested) {
+      in_sub_menu = true;
+      is_main_menu = false;
+      submenu_initialized = false;
+      feature_active = false;
+      feature_exit_requested = false;
+      displaySubmenu();  // 回到蓝牙子菜单列表
+      delay(200);
+  }
+#else
+  showFeatureUnavailable("BLE Rubber Ducky", "This feature requires ESP32-S3.");
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// 全局渲染状态变量与菜单布局常量
+// ---------------------------------------------------------------------------
+float currentBatteryVoltage = readBatteryVoltage();   // 当前电池电压（启动时读一次）
+unsigned long last_interaction_time = 0;              // 最近一次用户交互的时间戳（用于自动待机）
+
+int last_submenu_index = -1;   // 上一个高亮显示的子菜单项（用于局部重绘）
+bool submenu_initialized = false;//子菜单：是否已经完整画过一屏（false=需要全量重画）
+int last_menu_index = -1;      // 上一个高亮显示的主菜单项（用于局部重绘）
+bool menu_initialized = false;//主菜单：是否已经完整画过一屏（false=需要全量重画）
+
+// 主菜单/More 宫格的排版常量（像素单位）
+const int COLUMN_WIDTH = 120;// 每列的宽度（像素） column:纵行
+const int X_OFFSET_LEFT = 10;// 第一列的起始 X 坐标（左侧边距）
+const int X_OFFSET_RIGHT = X_OFFSET_LEFT + COLUMN_WIDTH;// 第二列的起始 X 坐标 = 130
+const int Y_START = 30;// 第一行的起始 Y 坐标（顶部边距）
+const int Y_SPACING = 75;// 行与行之间的垂直间距
+
+void displayOtherMenuGrid();  // 前向声明：More 首页 2×2 宫格绘制函数（定义在下方）
+
+/**
+ * @brief 绘制当前子菜单（列表式）
+ *
+ * 作用：使用 updateActiveSubmenu() 设好的 active_submenu_items / active_submenu_icons，
+ *      在屏幕上画出一列菜单项（图标 + 文字）。只重画“旧高亮行”和“新高亮行”，
+ *      避免每次按键都刷新整个屏幕，减少闪烁。
+ *
+ * 特殊处理：如果处于“More 首页”（主菜单[2]且 other_layer==HOME），
+ *      直接转交给 displayOtherMenuGrid() 画 2×2 宫格。
+ */
+void displaySubmenu() {
+    setTouchButtonInputEnabled(false);  // 子菜单列表页不需要底部触摸导航栏
+
+    if (current_menu_index == 2 && other_layer == OTHER_LAYER_HOME) {
+        displayOtherMenuGrid();  // More 首页用宫格而非列表
+        return;
+    }
+
+    menu_initialized = false;
+    last_menu_index = -1;
+
+    tft.setTextFont(2);
+    tft.setTextSize(1);
+
+    if (!submenu_initialized) {   // 需要全量重画整个子菜单列表
+        tft.fillScreen(UI_BG);
+
+        for (int i = 0; i < active_submenu_size; i++) {   // 逐项绘制 图标+文字
+            int yPos = 30 + i * 30;                      // 每行高度 30 像素
+            if (i == active_submenu_size - 1) yPos += 10; // 最后一行（返回）多留 10 像素
+
+            tft.setTextColor((i == active_submenu_size - 1) ? UI_TEXT : UI_TEXT, UI_BG);
+            tft.drawBitmap(10, yPos, active_submenu_icons[i], 16, 16, (i == active_submenu_size - 1) ? UI_TEXT : UI_TEXT);
+            tft.setCursor(30, yPos);
+            if (i < active_submenu_size - 1) {
+                tft.print("| ");
+            }
+            tft.print(active_submenu_items[i]);
+        }
+
+        submenu_initialized = true;
+        last_submenu_index = -1;
+    }
+
+    if (last_submenu_index != current_submenu_index) {
+        if (last_submenu_index >= 0) {
+            int prev_yPos = 30 + last_submenu_index * 30;
+            if (last_submenu_index == active_submenu_size - 1) prev_yPos += 10;
+
+            tft.setTextColor((last_submenu_index == active_submenu_size - 1) ? UI_TEXT : UI_TEXT, UI_BG);
+            tft.drawBitmap(10, prev_yPos, active_submenu_icons[last_submenu_index], 16, 16, (last_submenu_index == active_submenu_size - 1) ? UI_TEXT : UI_TEXT);
+            tft.setCursor(30, prev_yPos);
+            if (last_submenu_index < active_submenu_size - 1) {
+                tft.print("| ");
+            }
+            tft.print(active_submenu_items[last_submenu_index]);
+        }
+
+        int new_yPos = 30 + current_submenu_index * 30;
+        if (current_submenu_index == active_submenu_size - 1) new_yPos += 10;
+
+        tft.setTextColor((current_submenu_index == active_submenu_size - 1) ? UI_ICON : UI_ICON, UI_BG);
+        tft.drawBitmap(10, new_yPos, active_submenu_icons[current_submenu_index], 16, 16, (current_submenu_index == active_submenu_size - 1) ? UI_ICON : UI_ICON);
+        tft.setCursor(30, new_yPos);
+        if (current_submenu_index < active_submenu_size - 1) {
+            tft.print("| ");
+        }
+        tft.print(active_submenu_items[current_submenu_index]);
+
+        last_submenu_index = current_submenu_index;
+    }
+
+    drawStatusBar(currentBatteryVoltage, true);
+}
+
+/**
+ * @brief 绘制 More 首页的 2×2 宫格（IR Remote / RFID/NFC / GPS / Main Menu）
+ *
+ * 作用：4 个入口排成 2×2 方块宫格。与主菜单一样采用“局部重绘”策略：
+ *      只有第一次（other_menu_grid_initialized==false）才全量画一遍，
+ *      之后光标移动时只重画“旧选中方块”和“新选中方块”来更新高亮。
+ */
+void displayOtherMenuGrid() {
+    applyThemeToPalette(settings().theme);  // 先应用当前主题色
+
+    submenu_initialized = false;
+    last_submenu_index = -1;
+    menu_initialized = false;
+    last_menu_index = -1;
+
+    tft.setTextFont(2);
+
+    if (!other_menu_grid_initialized) {
+        tft.fillScreen(UI_BG);
+
+        for (int i = 0; i < other_NUM_SUBMENU_ITEMS; i++) {
+            int column = i % OTHER_GRID_COLS;
+            int row = i / OTHER_GRID_COLS;
+            int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+            int y_position = Y_START + row * Y_SPACING;
+
+            tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+            tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_LINE);
+            tft.drawBitmap(x_position + 42, y_position + 10, other_submenu_icons[i], 16, 16, UI_ICON);
+
+            tft.setTextColor(UI_TEXT, UI_FG);
+            int textWidth = tft.textWidth(other_submenu_items[i]);
+            int textX = x_position + (100 - textWidth) / 2;
+            int textY = y_position + 30;
+            tft.setCursor(textX, textY);
+            tft.print(other_submenu_items[i]);
+        }
+
+        other_menu_grid_initialized = true;
+        last_other_menu_index = -1;
+    }
+
+    if (last_other_menu_index != current_submenu_index) {
+        for (int i = 0; i < other_NUM_SUBMENU_ITEMS; i++) {
+            int column = i % OTHER_GRID_COLS;
+            int row = i / OTHER_GRID_COLS;
+            int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+            int y_position = Y_START + row * Y_SPACING;
+
+            if (i == last_other_menu_index) {
+                tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+                tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_LINE);
+                tft.setTextColor(UI_TEXT, UI_FG);
+                tft.drawBitmap(x_position + 42, y_position + 10,
+                               other_submenu_icons[last_other_menu_index], 16, 16, UI_ICON);
+                int textWidth = tft.textWidth(other_submenu_items[last_other_menu_index]);
+                int textX = x_position + (100 - textWidth) / 2;
+                int textY = y_position + 30;
+                tft.setCursor(textX, textY);
+                tft.print(other_submenu_items[last_other_menu_index]);
+            }
+        }
+
+        int column = current_submenu_index % OTHER_GRID_COLS;
+        int row = current_submenu_index / OTHER_GRID_COLS;
+        int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+        int y_position = Y_START + row * Y_SPACING;
+
+        tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+        tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_ICON);
+
+        tft.setTextColor(UI_ICON, UI_FG);
+        tft.drawBitmap(x_position + 42, y_position + 10, other_submenu_icons[current_submenu_index],
+                       16, 16, SELECTED_ICON_COLOR);
+        int textWidth = tft.textWidth(other_submenu_items[current_submenu_index]);
+        int textX = x_position + (100 - textWidth) / 2;
+        int textY = y_position + 30;
+        tft.setCursor(textX, textY);
+        tft.print(other_submenu_items[current_submenu_index]);
+
+        last_other_menu_index = current_submenu_index;
+    }
+
+    drawStatusBar(currentBatteryVoltage, true);
+}
+
+/** Main menu "Other" tile (index 2): triple preview icons (LED / satellite / dots). */
+static constexpr int MAIN_MENU_OTHER_IDX = 2;
+static constexpr int MAIN_MENU_OTHER_ICON_GAP = 4;
+
+static void drawMainMenuOtherTripleIcons(int x_position, int y_position, uint16_t iconColor) {
+    const int tripleW = 16 * 3 + MAIN_MENU_OTHER_ICON_GAP * 2;
+    int ix = x_position + (100 - tripleW) / 2;
+    const int iy = y_position + 10;
+    tft.drawBitmap(ix, iy, bitmap_icon_led, 16, 16, iconColor);
+    tft.drawBitmap(ix + 16 + MAIN_MENU_OTHER_ICON_GAP, iy, bitmap_icon_satellite, 16, 16, iconColor);
+    tft.drawBitmap(ix + 32 + MAIN_MENU_OTHER_ICON_GAP * 2, iy, bitmap_icon_down_dots, 16, 16, iconColor);
+}
+
+/**
+ * @brief 绘制主菜单（2 列 × 4 行的宫格界面）
+ *
+ * 作用：把 menu_items[8] + bitmap_icons[8] 画成 8 个圆角方块。
+ *      使用局部重绘：第一次全量画，之后光标移动只重画旧/新两个方块。
+ *      “More”那块（下标 2）不画单个图标，而是显示三个小图标预览
+ *      （LED + 卫星 + 圆点），暗示它下面还有子功能。
+ */
+void displayMenu() {
+
+  setTouchButtonInputEnabled(false);   // 主菜单页不需要底部触摸导航栏
+  applyThemeToPalette(settings().theme); // 应用当前主题色
+
+const uint16_t icon_colors[NUM_MENU_ITEMS] = {
+  UI_ICON,
+  UI_ICON,
+  UI_ICON,
+  UI_ICON,
+  UI_ICON,
+  UI_ICON,
+  UI_ICON,
+  UI_ICON
+};
+
+    submenu_initialized = false;
+    last_submenu_index = -1;
+    other_menu_grid_initialized = false;
+    last_other_menu_index = -1;
+    tft.setTextFont(2);
+
+    if (!menu_initialized) {
+        tft.fillScreen(UI_BG);
+
+        for (int i = 0; i < NUM_MENU_ITEMS; i++) {
+            int column = i / 4;
+            int row = i % 4;
+            int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+            int y_position = Y_START + row * Y_SPACING;
+
+            tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+            tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_LINE);
+            if (i == MAIN_MENU_OTHER_IDX) {
+                drawMainMenuOtherTripleIcons(x_position, y_position, icon_colors[i]);
+            } else {
+                tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[i], 16, 16, icon_colors[i]);
+            }
+
+            tft.setTextColor(UI_TEXT, UI_FG);
+            int textWidth = tft.textWidth(menu_items[i]);
+            int textX = x_position + (100 - textWidth) / 2;
+            int textY = y_position + 30;
+            tft.setCursor(textX, textY);
+            tft.print(menu_items[i]);
+        }
+        menu_initialized = true;
+        last_menu_index = -1;
+    }
+
+    if (last_menu_index != current_menu_index) {
+        for (int i = 0; i < NUM_MENU_ITEMS; i++) {
+            int column = i / 4;
+            int row = i % 4;
+            int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+            int y_position = Y_START + row * Y_SPACING;
+
+            if (i == last_menu_index) {
+                tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+                tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_LINE);
+                tft.setTextColor(UI_TEXT, UI_FG);
+                if (last_menu_index == MAIN_MENU_OTHER_IDX) {
+                    drawMainMenuOtherTripleIcons(x_position, y_position, icon_colors[last_menu_index]);
+                } else {
+                    tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[last_menu_index], 16, 16, icon_colors[last_menu_index]);
+                }
+                int textWidth = tft.textWidth(menu_items[last_menu_index]);
+                int textX = x_position + (100 - textWidth) / 2;
+                int textY = y_position + 30;
+                tft.setCursor(textX, textY);
+                tft.print(menu_items[last_menu_index]);
+            }
+        }
+
+        int column = current_menu_index / 4;
+        int row = current_menu_index % 4;
+        int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+        int y_position = Y_START + row * Y_SPACING;
+
+        tft.fillRoundRect(x_position, y_position, 100, 60, 5, UI_FG);
+        tft.drawRoundRect(x_position, y_position, 100, 60, 5, UI_ICON);
+
+        tft.setTextColor(UI_ICON, UI_FG);
+        if (current_menu_index == MAIN_MENU_OTHER_IDX) {
+            drawMainMenuOtherTripleIcons(x_position, y_position, SELECTED_ICON_COLOR);
+        } else {
+            tft.drawBitmap(x_position + 42, y_position + 10, bitmap_icons[current_menu_index], 16, 16, SELECTED_ICON_COLOR);
+        }
+        int textWidth = tft.textWidth(menu_items[current_menu_index]);
+        int textX = x_position + (100 - textWidth) / 2;
+        int textY = y_position + 30;
+        tft.setCursor(textX, textY);
+        tft.print(menu_items[current_menu_index]);
+
+        last_menu_index = current_menu_index;
+    }
+    drawStatusBar(currentBatteryVoltage, true);
+}
+
+/**
+ * @brief 处理 WiFi 子菜单的按键/触摸导航
+ *
+ * 负责 WiFi 子菜单（8 项）的交互逻辑：
+ *   - UP/DOWN 键：循环移动高亮光标（current_submenu_index）
+ *   - SELECT 键：按当前高亮项启动对应功能（PacketMonitor / BeaconSpammer /
+ *               Deauther / ProbeRequestFlood / DeauthDetect / WifiScan / CaptivePortal）
+ *   - 触摸屏：直接点某个菜单项则立即启动该功能
+ *
+ * 每个功能都遵循同一模式：XXX::setup() 初始化 → while 循环不断调用
+ * XXX::loop() 持续运行 → 检测到 SELECT/退出标志则清理状态、返回子菜单列表。
+ */
+void handleWiFiSubmenuButtons() {
+    if (isButtonPressed(BTN_UP)) {
+        current_submenu_index = (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+        if (current_submenu_index < 0) {
+            current_submenu_index = NUM_SUBMENU_ITEMS - 1;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_DOWN)) {
+        current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+        if (current_submenu_index >= NUM_SUBMENU_ITEMS) {
+            current_submenu_index = 0;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(70);
+
+        if (current_submenu_index == 7) {
+            in_sub_menu = false;
+            feature_active = false;
+            feature_exit_requested = false;
+            displayMenu();
+            handleButtons();
+            is_main_menu = false;
+        }
+
+        if (current_submenu_index == 0) {
+            current_submenu_index = 0;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            PacketMonitor::ptmSetup();
+            while (current_submenu_index == 0 && !feature_exit_requested) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                PacketMonitor::ptmLoop();
+                if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 1) {
+            current_submenu_index = 1;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            BeaconSpammer::beaconSpamSetup();
+            while (current_submenu_index == 1 && !feature_exit_requested) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                BeaconSpammer::beaconSpamLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 2) {
+            current_submenu_index = 2;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            Deauther::deautherSetup();
+            while (current_submenu_index == 2 && !feature_exit_requested) {
+                current_submenu_index = 2;
+                in_sub_menu = true;
+                Deauther::deautherLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 3) {
+            current_submenu_index = 3;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            ProbeRequestFlood::probeRequestFloodSetup();
+            while (current_submenu_index == 3 && !feature_exit_requested) {
+                current_submenu_index = 3;
+                in_sub_menu = true;
+                ProbeRequestFlood::probeRequestFloodLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 4) {
+            current_submenu_index = 4;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            DeauthDetect::deauthdetectSetup();
+            while (current_submenu_index == 4 && !feature_exit_requested) {
+                current_submenu_index = 4;
+                in_sub_menu = true;
+                DeauthDetect::deauthdetectLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 5) {
+            current_submenu_index = 5;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            WifiScan::wifiscanSetup();
+            while (current_submenu_index == 5 && !feature_exit_requested) {
+                current_submenu_index = 5;
+                in_sub_menu = true;
+                WifiScan::wifiscanLoop();
+                if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+        if (current_submenu_index == 6) {
+            current_submenu_index = 6;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            CaptivePortal::cportalSetup();
+            while (current_submenu_index == 6 && !feature_exit_requested) {
+                current_submenu_index = 6;
+                in_sub_menu = true;
+                CaptivePortal::cportalLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) { return; }
+        delay(10);
+        for (int i = 0; i < active_submenu_size; i++) {
+            int yPos = 30 + i * 30;
+            if (i == active_submenu_size - 1) yPos += 10;
+
+            int button_x1 = 10;
+            int button_y1 = yPos;
+            int button_x2 = 110;
+            int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+            if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                current_submenu_index = i;
+                last_interaction_time = millis();
+                displaySubmenu();
+                delay(200);
+
+                if (current_submenu_index == 7) {
+                    in_sub_menu = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displayMenu();
+                    handleButtons();
+                    is_main_menu = false;
+                } else if (current_submenu_index == 0) {
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    PacketMonitor::ptmSetup();
+                    while (current_submenu_index == 0 && !feature_exit_requested) {
+                        current_submenu_index = 0;
+                        in_sub_menu = true;
+                        PacketMonitor::ptmLoop();
+                        if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 1) {
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    BeaconSpammer::beaconSpamSetup();
+                    while (current_submenu_index == 1 && !feature_exit_requested) {
+                        current_submenu_index = 1;
+                        in_sub_menu = true;
+                        BeaconSpammer::beaconSpamLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 2) {
+                    current_submenu_index = 2;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    Deauther::deautherSetup();
+                    while (current_submenu_index == 2 && !feature_exit_requested) {
+                        current_submenu_index = 2;
+                        in_sub_menu = true;
+                        Deauther::deautherLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 3) {
+                    current_submenu_index = 3;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    ProbeRequestFlood::probeRequestFloodSetup();
+                    while (current_submenu_index == 3 && !feature_exit_requested) {
+                        current_submenu_index = 3;
+                        in_sub_menu = true;
+                        ProbeRequestFlood::probeRequestFloodLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 4) {
+                    current_submenu_index = 4;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    DeauthDetect::deauthdetectSetup();
+                    while (current_submenu_index == 4 && !feature_exit_requested) {
+                        current_submenu_index = 4;
+                        in_sub_menu = true;
+                        DeauthDetect::deauthdetectLoop();
+                        if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 5) {
+                    current_submenu_index = 5;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    WifiScan::wifiscanSetup();
+                    while (current_submenu_index == 5 && !feature_exit_requested) {
+                        current_submenu_index = 5;
+                        in_sub_menu = true;
+                        WifiScan::wifiscanLoop();
+                        if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 6) {
+                    current_submenu_index = 6;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    CaptivePortal::cportalSetup();
+                    while (current_submenu_index == 6 && !feature_exit_requested) {
+                        current_submenu_index = 6;
+                        in_sub_menu = true;
+                        CaptivePortal::cportalLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * @brief 处理 Bluetooth (BLE) 子菜单的按键/触摸导航
+ *
+ * 负责 BLE 子菜单（7 项）的交互逻辑：
+ *   - UP/DOWN 键：循环移动高亮光标
+ *   - SELECT 键：启动对应 BLE 功能（BleJammer / BleSpoofer / SourApple /
+ *               BleSniffer / BleScan / BLE Rubber Ducky）
+ *   - 触摸屏：直接点某项则启动该功能
+ *   - 部分功能（BleSpoofer/SourApple/BleSniffer/BleScan）退出时会调用
+ *     对应的 exit() 清理 BLE 广播/扫描资源，避免干扰后续功能。
+ */
+void handleBluetoothSubmenuButtons() {
+    if (isButtonPressed(BTN_UP)) {
+        current_submenu_index = (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+        if (current_submenu_index < 0) {
+            current_submenu_index = NUM_SUBMENU_ITEMS - 1;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_DOWN)) {
+        current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+        if (current_submenu_index >= NUM_SUBMENU_ITEMS) {
+            current_submenu_index = 0;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(200);
+
+        if (current_submenu_index == 6) {
+            in_sub_menu = false;
+            feature_active = false;
+            feature_exit_requested = false;
+            displayMenu();
+            handleButtons();
+            is_main_menu = false;
+        }
+
+        if (current_submenu_index == 0) {
+            current_submenu_index = 0;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            BleJammer::blejamSetup();
+            while (current_submenu_index == 0 && !feature_exit_requested) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                BleJammer::blejamLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 1) {
+            current_submenu_index = 1;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            BleSpoofer::spooferSetup();
+            while (current_submenu_index == 1 && !feature_exit_requested) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                BleSpoofer::spooferLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+
+            BleSpoofer::exit();
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 2) {
+            current_submenu_index = 2;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            SourApple::sourappleSetup();
+            while (current_submenu_index == 2 && !feature_exit_requested) {
+                current_submenu_index = 2;
+                in_sub_menu = true;
+                SourApple::sourappleLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+
+            SourApple::exit();
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 3) {
+            current_submenu_index = 3;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            BleSniffer::blesnifferSetup();
+            while (current_submenu_index == 3 && !feature_exit_requested) {
+                current_submenu_index = 3;
+                in_sub_menu = true;
+                BleSniffer::blesnifferLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+
+            BleSniffer::exit();
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 4) {
+            current_submenu_index = 4;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            BleScan::bleScanSetup();
+            while (current_submenu_index == 4 && !feature_exit_requested) {
+                current_submenu_index = 4;
+                in_sub_menu = true;
+                BleScan::bleScanLoop();
+                if (isButtonPressed(BTN_SELECT)) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+
+            BleScan::exit();
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 5) {
+            runBleDuckyFeature();
+        }
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) { return; }
+        delay(10);
+        for (int i = 0; i < active_submenu_size; i++) {
+            int yPos = 30 + i * 30;
+            if (i == active_submenu_size - 1) yPos += 10;
+
+            int button_x1 = 10;
+            int button_y1 = yPos;
+            int button_x2 = 110;
+            int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+            if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                current_submenu_index = i;
+                last_interaction_time = millis();
+                displaySubmenu();
+                delay(200);
+
+                if (current_submenu_index == 6) {
+                    in_sub_menu = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displayMenu();
+                    handleButtons();
+                    is_main_menu = false;
+                } else if (current_submenu_index == 0) {
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    BleJammer::blejamSetup();
+                    while (current_submenu_index == 0 && !feature_exit_requested) {
+                        current_submenu_index = 0;
+                        in_sub_menu = true;
+                        BleJammer::blejamLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 1) {
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    BleSpoofer::spooferSetup();
+                    while (current_submenu_index == 1 && !feature_exit_requested) {
+                        current_submenu_index = 1;
+                        in_sub_menu = true;
+                        BleSpoofer::spooferLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    BleSpoofer::exit();
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 2) {
+                    current_submenu_index = 2;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    SourApple::sourappleSetup();
+                    while (current_submenu_index == 2 && !feature_exit_requested) {
+                        current_submenu_index = 2;
+                        in_sub_menu = true;
+                        SourApple::sourappleLoop();
+                        if (featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    SourApple::exit();
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 3) {
+                    current_submenu_index = 3;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    BleSniffer::blesnifferSetup();
+                    while (current_submenu_index == 3 && !feature_exit_requested) {
+                        current_submenu_index = 3;
+                        in_sub_menu = true;
+                        BleSniffer::blesnifferLoop();
+                        if (featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    BleSniffer::exit();
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 4) {
+                    current_submenu_index = 4;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    BleScan::bleScanSetup();
+                    while (current_submenu_index == 4 && !feature_exit_requested) {
+                        current_submenu_index = 4;
+                        in_sub_menu = true;
+                        BleScan::bleScanLoop();
+                        if (isButtonPressed(BTN_SELECT)) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    BleScan::exit();
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 5) {
+                    runBleDuckyFeature();
+                }
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * @brief 处理 2.4GHz (NRF24L01+) 子菜单的按键/触摸导航
+ *
+ * 负责 NRF 子菜单（3 项：Scanner / Proto Kill / 返回）的交互逻辑：
+ *   - UP/DOWN 键循环移动光标，SELECT 启动 Scanner::scannerSetup/Loop
+ *     或 ProtoKill::prokillSetup/Loop，选“返回”则回到主菜单。
+ *   - 触摸屏直接点某项等同按 SELECT。
+ */
+void handleNRFSubmenuButtons() {
+    if (isButtonPressed(BTN_UP)) {
+        current_submenu_index = (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+        if (current_submenu_index < 0) {
+            current_submenu_index = NUM_SUBMENU_ITEMS - 1;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_DOWN)) {
+        current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+        if (current_submenu_index >= NUM_SUBMENU_ITEMS) {
+            current_submenu_index = 0;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(200);
+
+        if (current_submenu_index == 2) {
+            in_sub_menu = false;
+            feature_active = false;
+            feature_exit_requested = false;
+            displayMenu();
+            handleButtons();
+            is_main_menu = false;
+        }
+
+        if (current_submenu_index == 0) {
+            current_submenu_index = 0;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            Scanner::scannerSetup();
+            while (current_submenu_index == 0 && !feature_exit_requested) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                Scanner::scannerLoop();
+                if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 1) {
+            current_submenu_index = 1;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            ProtoKill::prokillSetup();
+            while (current_submenu_index == 1 && !feature_exit_requested) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                ProtoKill::prokillLoop();
+                if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) { return; }
+        delay(10);
+        for (int i = 0; i < active_submenu_size; i++) {
+            int yPos = 30 + i * 30;
+            if (i == active_submenu_size - 1) yPos += 10;
+
+            int button_x1 = 10;
+            int button_y1 = yPos;
+            int button_x2 = 110;
+            int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+            if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                current_submenu_index = i;
+                last_interaction_time = millis();
+                displaySubmenu();
+                delay(200);
+
+                if (current_submenu_index == 2) {
+                    in_sub_menu = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displayMenu();
+                    handleButtons();
+                    is_main_menu = false;
+                } else if (current_submenu_index == 0) {
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    Scanner::scannerSetup();
+                    while (current_submenu_index == 0 && !feature_exit_requested) {
+                        current_submenu_index = 0;
+                        in_sub_menu = true;
+                        Scanner::scannerLoop();
+                        if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 1) {
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    ProtoKill::prokillSetup();
+                    while (current_submenu_index == 1 && !feature_exit_requested) {
+                        current_submenu_index = 1;
+                        in_sub_menu = true;
+                        ProtoKill::prokillLoop();
+                        if (isButtonPressed(BTN_SELECT) || featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * @brief 处理 SubGHz 子菜单的按键/触摸导航
+ *
+ * 负责 SubGHz 子菜单（4 项：Replay Attack / SubGHz Jammer / Saved Profile / 返回）
+ * 的交互逻辑：
+ *   - UP/DOWN 键循环移动光标，SELECT 启动对应功能
+ *     （replayat::ReplayAttackSetup/Loop、subjammer::subjammerSetup/Loop、
+ *      SavedProfile::saveSetup/Loop）。
+ *   - 这些功能内部都通过 featureExitButtonPressed()（按 SELECT）退出。
+ */
+void handleSubGHzSubmenuButtons() {
+    if (isButtonPressed(BTN_UP)) {
+        current_submenu_index = (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+        if (current_submenu_index < 0) {
+            current_submenu_index = NUM_SUBMENU_ITEMS - 1;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_DOWN)) {
+        current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+        if (current_submenu_index >= NUM_SUBMENU_ITEMS) {
+            current_submenu_index = 0;
+        }
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(200);
+
+        if (current_submenu_index == 3) {
+            in_sub_menu = false;
+            feature_active = false;
+            feature_exit_requested = false;
+            displayMenu();
+            handleButtons();
+            is_main_menu = false;
+        }
+
+        if (current_submenu_index == 0) {
+
+            current_submenu_index = 0;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            replayat::ReplayAttackSetup();
+            while (current_submenu_index == 0 && !feature_exit_requested) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                replayat::ReplayAttackLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 1) {
+
+            current_submenu_index = 1;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            subjammer::subjammerSetup();
+            while (current_submenu_index == 1 && !feature_exit_requested) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                subjammer::subjammerLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+
+        if (current_submenu_index == 2) {
+
+            current_submenu_index = 2;
+            in_sub_menu = true;
+            feature_active = true;
+            feature_exit_requested = false;
+            SavedProfile::saveSetup();
+            while (current_submenu_index == 2 && !feature_exit_requested) {
+                current_submenu_index = 2;
+                in_sub_menu = true;
+                SavedProfile::saveLoop();
+                if (featureExitButtonPressed()) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                    while (isButtonPressed(BTN_SELECT)) {
+                    }
+                    break;
+                }
+            }
+            if (feature_exit_requested) {
+                in_sub_menu = true;
+                is_main_menu = false;
+                submenu_initialized = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displaySubmenu();
+                delay(200);
+            }
+        }
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) { return; }
+        delay(10);
+        for (int i = 0; i < active_submenu_size; i++) {
+            int yPos = 30 + i * 30;
+            if (i == active_submenu_size - 1) yPos += 10;
+
+            int button_x1 = 10;
+            int button_y1 = yPos;
+            int button_x2 = 110;
+            int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+            if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                current_submenu_index = i;
+                last_interaction_time = millis();
+                displaySubmenu();
+                delay(200);
+
+                if (current_submenu_index == 3) {
+                    in_sub_menu = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displayMenu();
+                    handleButtons();
+                    is_main_menu = false;
+
+                } else if (current_submenu_index == 0) {
+
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    replayat::ReplayAttackSetup();
+                    while (current_submenu_index == 0 && !feature_exit_requested) {
+                        current_submenu_index = 0;
+                        in_sub_menu = true;
+                        replayat::ReplayAttackLoop();
+                        if (featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 2) {
+
+                    current_submenu_index = 2;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    SavedProfile::saveSetup();
+                    while (current_submenu_index == 2 && !feature_exit_requested) {
+                        current_submenu_index = 2;
+                        in_sub_menu = true;
+                        SavedProfile::saveLoop();
+                        if (featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                } else if (current_submenu_index == 1) {
+
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    feature_active = true;
+                    feature_exit_requested = false;
+                    subjammer::subjammerSetup();
+                    while (current_submenu_index == 1 && !feature_exit_requested) {
+                        current_submenu_index = 1;
+                        in_sub_menu = true;
+                        subjammer::subjammerLoop();
+                        if (featureExitButtonPressed()) {
+                            in_sub_menu = true;
+                            is_main_menu = false;
+                            submenu_initialized = false;
+                            feature_active = false;
+                            feature_exit_requested = false;
+                            displaySubmenu();
+                            delay(200);
+                            while (isButtonPressed(BTN_SELECT)) {
+                            }
+                            break;
+                        }
+                    }
+                    if (feature_exit_requested) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
+// Tools 子菜单各项的索引常量（与 tools_submenu_items 下标一一对应）
+constexpr int TOOLS_IDX_TERMINAL = 0;    // [0] 串口监视器
+constexpr int TOOLS_IDX_UPDATE   = 1;    // [1] 固件更新
+constexpr int TOOLS_IDX_TOUCH    = 2;    // [2] 触摸校准
+constexpr int TOOLS_IDX_SD_FILES = 3;    // [3] SD 文件管理器
+constexpr int TOOLS_IDX_SETTINGS = -1;   // 保留（未用于设置）
+constexpr int TOOLS_IDX_BACK     = 4;    // [4] 返回主菜单
+
+/** @brief 工具功能退出后的统一清理：关闭触摸导航、重置标签、重绘子菜单 */
+static void runToolsFeatureExitCleanup() {
+    in_sub_menu = true;
+    is_main_menu = false;
+    submenu_initialized = false;
+    feature_active = false;
+    feature_exit_requested = false;
+    setTouchButtonInputEnabled(false);
+    setTouchNavLabels(nullptr, nullptr, nullptr, nullptr, nullptr);
+    resetTouchNavHeldState();
+    displaySubmenu();
+    delay(200);
+    while (isButtonPressed(BTN_SELECT)) {
+    }
+}
+
+/**
+ * @brief 通用“工具功能启动器”：任何 Tools 子功能都走这套流程
+ * @param idx       子菜单下标（用于 while 循环退出判断）
+ * @param setupFn   该功能的初始化函数指针（如 Terminal::terminalSetup）
+ * @param loopFn    该功能的主循环函数指针（如 Terminal::terminalLoop）
+ *
+ * 流程：启用触摸导航（触摸校准除外）→ 调用 setupFn() → 循环调用 loopFn()
+ *      直到用户请求退出 → 统一清理（runToolsFeatureExitCleanup）。
+ */
+static void runToolsFeature(int idx, void (*setupFn)(), void (*loopFn)()) {
+    const bool useTouchNav = (idx != TOOLS_IDX_TOUCH);
+    current_submenu_index = idx;
+    in_sub_menu = true;
+    feature_active = true;
+    feature_exit_requested = false;
+    if (useTouchNav) {
+        setTouchButtonInputEnabled(true);
+    }
+    setupFn();
+    while (current_submenu_index == idx && !feature_exit_requested) {
+        current_submenu_index = idx;
+        in_sub_menu = true;
+        loopFn();
+        if (feature_exit_requested) {
+            break;
+        }
+        if (!useTouchNav && isButtonPressed(BTN_SELECT)) {
+            break;
+        }
+    }
+    runToolsFeatureExitCleanup();
+}
+
+/** @brief 按下标启动对应的 Tools 工具功能 */
+static void launchToolsFeature(int idx) {
+    switch (idx) {
+        case TOOLS_IDX_TERMINAL:
+            runToolsFeature(idx, Terminal::terminalSetup, Terminal::terminalLoop);
+            break;
+        case TOOLS_IDX_UPDATE:
+            runToolsFeature(idx, FirmwareUpdate::updateSetup, FirmwareUpdate::updateLoop);
+            break;
+        case TOOLS_IDX_TOUCH:
+            runToolsFeature(idx, TouchCalib::setup, TouchCalib::loop);
+            break;
+        case TOOLS_IDX_SD_FILES:
+            runToolsFeature(idx, SdFileManager::setup, SdFileManager::loop);
+            break;
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief 处理 Tools 工具子菜单的按键/触摸导航
+ *
+ * 负责 Tools 子菜单（5 项）的交互：
+ *   - UP/DOWN 移动光标；SELECT 启动工具（或返回主菜单）
+ *   - 触摸屏直接点某项等同按 SELECT
+ *   - 具体工具通过 launchToolsFeature() 统一启动
+ */
+void handleToolsSubmenuButtons() {
+    if (isButtonPressed(BTN_UP)) {
+        current_submenu_index = (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_DOWN)) {
+        current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(200);
+
+        if (current_submenu_index == TOOLS_IDX_BACK) {
+            in_sub_menu = false;
+            feature_active = false;
+            feature_exit_requested = false;
+            displayMenu();
+            handleButtons();
+            is_main_menu = false;
+            return;
+        }
+
+        launchToolsFeature(current_submenu_index);
+        return;
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) {
+            return;
+        }
+
+        for (int i = 0; i < active_submenu_size; i++) {
+            int yPos = 30 + i * 30;
+            if (i == active_submenu_size - 1) yPos += 10;
+
+            int button_x1 = 10;
+            int button_y1 = yPos;
+            int button_x2 = 110;
+            int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+            if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                current_submenu_index = i;
+                last_interaction_time = millis();
+                displaySubmenu();
+                delay(200);
+
+                if (current_submenu_index == TOOLS_IDX_BACK) {
+                    in_sub_menu = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displayMenu();
+                    handleButtons();
+                    is_main_menu = false;
+                } else {
+                    launchToolsFeature(current_submenu_index);
+                }
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * @brief 等待用户按下 SELECT/LEFT 或触摸屏幕来关掉“功能不可用”弹窗
+ *
+ * 用于 RFID 等硬件未检测到的情况：先显示 notification 提示，
+ * 然后在此等待用户操作确认，最后刷新回子菜单列表。
+ */
+static void otherDismissPlaceholder() {
+    delay(25);
+    while (isButtonPressed(BTN_SELECT) || isButtonPressed(BTN_LEFT)) {
+        delay(5);
+    }
+    while (!isButtonPressed(BTN_SELECT) && !isButtonPressed(BTN_LEFT)) {
+        int x = 0, y = 0;
+        if (!readTouchXYDismiss(x, y) && !readTouchXY(x, y)) {
+            delay(12);
+            continue;
+        }
+        if (isNotificationVisible()) {
+            NotificationAction a = notificationHandleTouch(x, y);
+            if (a != NotificationAction::None) {
+                break;
+            }
+            hideNotification();
+        }
+        break;
+    }
+    if (in_sub_menu) {
+        submenu_initialized = false;
+        if (current_menu_index == 2 && other_layer == OTHER_LAYER_HOME) {
+            other_menu_grid_initialized = false;
+            last_other_menu_index = -1;
+        }
+        displaySubmenu();
+    }
+}
+
+/**
+ * @brief RFID/GPS 功能返回前的“按键释放守卫”
+ *
+ * 作用是等用户松开所有按键/触摸后再返回菜单，防止刚退出功能时
+ * 残留的按键事件立即误触发菜单里的下一个动作（抖动过滤）。
+ */
+static void otherRfidReturnGuard() {
+    delay(120);
+    for (int i = 0; i < 120; i++) {
+        if (!isButtonPressed(BTN_SELECT) && !isButtonPressed(BTN_LEFT) &&
+            !isButtonPressed(BTN_RIGHT) && !isButtonPressed(BTN_UP) &&
+            !isButtonPressed(BTN_DOWN) && !isTouchDownDismiss()) {
+            break;
+        }
+        delay(5);
+    }
+    delay(120);
+}
+
+/**
+ * @brief 启动某个 RFID/NFC 子功能（PN532 模块）
+ * @param idx  RFID 子菜单下标（0~7），对应对应 session 函数
+ *
+ * 先检查 RfidNfc::begin() 是否成功；失败则弹窗提示并等待关闭。
+ * 成功后循环执行对应的 sessionXXX()，直到用户退出或会话结束，
+ * 最后恢复 SPI 总线（SD 卡与 PN532 共用 SPI，需归还）并刷新菜单。
+ */
+static void otherRfidPlaceholderAction(int idx) {
+    feature_active = true;
+    if (!RfidNfc::begin()) {
+        showNotification("RFID/NFC", "PN532 not found. Check SPI wiring/pins.");
+        otherDismissPlaceholder();
+        feature_active = false;
+        return;
+    }
+    feature_exit_requested = false;
+    setTouchButtonInputEnabled(true);
+    for (;;) {
+        RfidNfc::clearSessionRetry();
+        switch (idx) {
+            case 0:
+                RfidNfc::sessionCardReader();
+                break;
+            case 1:
+                RfidNfc::sessionClone();
+                break;
+            case 2:
+                RfidNfc::sessionErase();
+                break;
+            case 3:
+                RfidNfc::sessionDump();
+                break;
+            case 4:
+                RfidNfc::sessionDecodeAccess();
+                break;
+            case 5:
+                RfidNfc::sessionJamReader();
+                break;
+            case 6:
+                RfidNfc::sessionTagDisrupt();
+                break;
+            case 7:
+                RfidNfc::sessionDisruptEmulate();
+                break;
+            default:
+                feature_active = false;
+                restoreSdAfterSharedSpi();
+                return;
+        }
+        if (feature_exit_requested || !RfidNfc::consumeSessionRetry()) {
+            break;
+        }
+        feature_exit_requested = false;
+    }
+    restoreSdAfterSharedSpi();
+    otherRfidReturnGuard();
+    submenu_initialized = false;
+    displaySubmenu();
+    feature_active = false;
+}
+
+/**
+ * @brief 启动某个 GPS 子功能
+ * @param idx  GPS 子菜单下标：0=Wardriver（持续记录坐标+扫描），1=卫星扫描
+ *
+ * Wardriver 会循环调用 GpsWardriver::session() 直到用户退出；
+ * 卫星扫描只跑一次（GpsSatelliteScanner::session()）。
+ */
+static void otherGpsPlaceholderAction(int idx) {
+    feature_active = true;
+    if (idx == 0) {
+        feature_exit_requested = false;
+        setTouchButtonInputEnabled(true);
+        for (;;) {
+            GpsWardriver::clearSessionRetry();
+            GpsWardriver::session();
+            if (feature_exit_requested || !GpsWardriver::consumeSessionRetry()) {
+                break;
+            }
+            feature_exit_requested = false;
+        }
+        setTouchButtonInputEnabled(false);
+    } else {
+        switch (idx) {
+            case 1:
+                GpsSatelliteScanner::session();
+                break;
+            default:
+                feature_active = false;
+                return;
+        }
+    }
+    otherRfidReturnGuard();
+    submenu_initialized = false;
+    displaySubmenu();
+    feature_active = false;
+}
+
+/**
+ * @brief 处理 More 菜单的按键/触摸导航（含 2×2 宫格首页 + IR/RFID/GPS 子菜单）
+ *
+ * 根据 other_layer 分两种模式：
+ *   - OTHER_LAYER_HOME：2×2 宫格，UP/DOWN/LEFT/RIGHT 四方向移动光标，
+ *     SELECT 进入 IR / RFID / GPS 子菜单或返回主菜单。
+ *   - 其他层（IR/RFID/GPS）：列表式，UP/DOWN 移动，SELECT 启动功能
+ *     （IR 的三个子功能、RFID 的 8 个子功能、GPS 的 2 个子功能）。
+ * 触摸屏点击宫格方块或列表行也会触发同样的逻辑。
+ */
+void handleOtherSubmenuButtons() {
+    if (other_layer == OTHER_LAYER_HOME) {
+        const int og_rows =
+            (other_NUM_SUBMENU_ITEMS + OTHER_GRID_COLS - 1) / OTHER_GRID_COLS;
+
+        if (isButtonPressed(BTN_UP)) {
+            int row = current_submenu_index / OTHER_GRID_COLS;
+            if (row > 0) {
+                current_submenu_index -= OTHER_GRID_COLS;
+            } else {
+                current_submenu_index += OTHER_GRID_COLS * (og_rows - 1);
+            }
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_DOWN)) {
+            int row = current_submenu_index / OTHER_GRID_COLS;
+            if (row < og_rows - 1) {
+                current_submenu_index += OTHER_GRID_COLS;
+            } else {
+                current_submenu_index -= OTHER_GRID_COLS * (og_rows - 1);
+            }
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_LEFT)) {
+            int col = current_submenu_index % OTHER_GRID_COLS;
+            if (col > 0) {
+                current_submenu_index--;
+            } else {
+                current_submenu_index++;
+            }
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_RIGHT)) {
+            int col = current_submenu_index % OTHER_GRID_COLS;
+            if (col < OTHER_GRID_COLS - 1) {
+                current_submenu_index++;
+            } else {
+                current_submenu_index--;
+            }
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+    } else {
+        if (isButtonPressed(BTN_UP)) {
+            current_submenu_index =
+                (current_submenu_index - 1 + active_submenu_size) % active_submenu_size;
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_DOWN)) {
+            current_submenu_index = (current_submenu_index + 1) % active_submenu_size;
+            last_interaction_time = millis();
+            displaySubmenu();
+            delay(200);
+        }
+    }
+
+    if (isButtonPressed(BTN_SELECT)) {
+        last_interaction_time = millis();
+        delay(200);
+
+        if (other_layer == OTHER_LAYER_HOME) {
+            if (current_submenu_index == other_NUM_SUBMENU_ITEMS - 1) {
+                in_sub_menu = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displayMenu();
+                handleButtons();
+                is_main_menu = false;
+            } else if (current_submenu_index == 0) {
+                other_layer = OTHER_LAYER_IR;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            } else if (current_submenu_index == 1) {
+                other_layer = OTHER_LAYER_RFID;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            } else if (current_submenu_index == 2) {
+                other_layer = OTHER_LAYER_GPS;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            }
+        } else if (other_layer == OTHER_LAYER_IR) {
+            if (current_submenu_index == ir_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                feature_active = false;
+                feature_exit_requested = false;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else if (current_submenu_index == 0) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRRemoteFeature::setup();
+                while (current_submenu_index == 0 && !feature_exit_requested) {
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    IRRemoteFeature::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            } else if (current_submenu_index == 1) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRSavedProfile::setup();
+                while (current_submenu_index == 1 && !feature_exit_requested) {
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    IRSavedProfile::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            } else if (current_submenu_index == 2) {
+                current_submenu_index = 2;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRUniversalController::setup();
+                while (current_submenu_index == 2 && !feature_exit_requested) {
+                    current_submenu_index = 2;
+                    in_sub_menu = true;
+                    IRUniversalController::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            }
+        } else if (other_layer == OTHER_LAYER_RFID) {
+            if (current_submenu_index == rfid_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else {
+                otherRfidPlaceholderAction(current_submenu_index);
+            }
+        } else if (other_layer == OTHER_LAYER_GPS) {
+            if (current_submenu_index == gps_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else {
+                otherGpsPlaceholderAction(current_submenu_index);
+            }
+        }
+    }
+
+    if (!feature_active) {
+        int x, y;
+        if (!readTouchXY(x, y)) { return; }
+        delay(10);
+
+        int touched_slot = -1;
+        if (other_layer == OTHER_LAYER_HOME) {
+            for (int i = 0; i < other_NUM_SUBMENU_ITEMS; i++) {
+                int column = i % OTHER_GRID_COLS;
+                int row = i / OTHER_GRID_COLS;
+                int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+                int y_position = Y_START + row * Y_SPACING;
+                int button_x1 = x_position;
+                int button_y1 = y_position;
+                int button_x2 = x_position + 100;
+                int button_y2 = y_position + 60;
+                if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                    touched_slot = i;
+                    break;
+                }
+            }
+        } else {
+            for (int i = 0; i < active_submenu_size; i++) {
+                int yPos = 30 + i * 30;
+                if (i == active_submenu_size - 1) yPos += 10;
+
+                int button_x1 = 10;
+                int button_y1 = yPos;
+                int button_x2 = 110;
+                int button_y2 = yPos + (i == active_submenu_size - 1 ? 40 : 30);
+
+                if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                    touched_slot = i;
+                    break;
+                }
+            }
+        }
+
+        if (touched_slot < 0) {
+            return;
+        }
+
+        current_submenu_index = touched_slot;
+        last_interaction_time = millis();
+        displaySubmenu();
+        delay(200);
+
+        if (other_layer == OTHER_LAYER_HOME) {
+            if (current_submenu_index == other_NUM_SUBMENU_ITEMS - 1) {
+                in_sub_menu = false;
+                feature_active = false;
+                feature_exit_requested = false;
+                displayMenu();
+                handleButtons();
+                is_main_menu = false;
+            } else if (current_submenu_index == 0) {
+                other_layer = OTHER_LAYER_IR;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            } else if (current_submenu_index == 1) {
+                other_layer = OTHER_LAYER_RFID;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            } else if (current_submenu_index == 2) {
+                other_layer = OTHER_LAYER_GPS;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+            }
+        } else if (other_layer == OTHER_LAYER_IR) {
+            if (current_submenu_index == ir_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                feature_active = false;
+                feature_exit_requested = false;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else if (current_submenu_index == 0) {
+                current_submenu_index = 0;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRRemoteFeature::setup();
+                while (current_submenu_index == 0 && !feature_exit_requested) {
+                    current_submenu_index = 0;
+                    in_sub_menu = true;
+                    IRRemoteFeature::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            } else if (current_submenu_index == 1) {
+                current_submenu_index = 1;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRSavedProfile::setup();
+                while (current_submenu_index == 1 && !feature_exit_requested) {
+                    current_submenu_index = 1;
+                    in_sub_menu = true;
+                    IRSavedProfile::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            } else if (current_submenu_index == 2) {
+                current_submenu_index = 2;
+                in_sub_menu = true;
+                feature_active = true;
+                feature_exit_requested = false;
+                IRUniversalController::setup();
+                while (current_submenu_index == 2 && !feature_exit_requested) {
+                    current_submenu_index = 2;
+                    in_sub_menu = true;
+                    IRUniversalController::loop();
+                    if (featureExitButtonPressed()) {
+                        in_sub_menu = true;
+                        is_main_menu = false;
+                        submenu_initialized = false;
+                        feature_active = false;
+                        feature_exit_requested = false;
+                        displaySubmenu();
+                        delay(200);
+                        while (featureExitButtonPressed()) {
+                        }
+                        break;
+                    }
+                }
+                if (feature_exit_requested) {
+                    in_sub_menu = true;
+                    is_main_menu = false;
+                    submenu_initialized = false;
+                    feature_active = false;
+                    feature_exit_requested = false;
+                    displaySubmenu();
+                    delay(200);
+                }
+            }
+        } else if (other_layer == OTHER_LAYER_RFID) {
+            if (current_submenu_index == rfid_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else {
+                otherRfidPlaceholderAction(current_submenu_index);
+            }
+        } else if (other_layer == OTHER_LAYER_GPS) {
+            if (current_submenu_index == gps_NUM_SUBMENU_ITEMS - 1) {
+                other_layer = OTHER_LAYER_HOME;
+                other_menu_grid_initialized = false;
+                last_other_menu_index = -1;
+                current_submenu_index = 0;
+                updateActiveSubmenu();
+                submenu_initialized = false;
+                displaySubmenu();
+                is_main_menu = false;
+            } else {
+                otherGpsPlaceholderAction(current_submenu_index);
+            }
+        }
+    }
+}
+
+/**
+ * @brief 显示“关于本项目”页面
+ *
+ * 清屏后逐行打印项目名称、开发者、版本、联系邮箱、GitHub、官网
+ * （用 tftPrintlnObf 输出“混淆字符串”，避免源码里明文暴露作者信息）。
+ * 按 SELECT/LEFT 或触摸屏幕任意处返回主菜单。
+ */
+void handleAboutPage() {
+
+  feature_active = true;
+  feature_exit_requested = false;
+
+  tft.fillScreen(UI_BG);
+  currentBatteryVoltage = readBatteryVoltage();
+  drawStatusBar(currentBatteryVoltage, true);
+
+  tft.setTextColor(UI_TEXT, UI_BG);
+  tft.setTextSize(1);
+  tft.setTextFont(2);
+
+  const char* title = "[About This Project]";
+  tft.setCursor(10, 50);
+  tft.println(title);
+
+  int lineHeight = 18;
+  int text_x = 10;
+  int text_y = 80;
+  tft.setCursor(text_x, text_y);
+  tft.print("- ");
+  tftPrintlnObf(OBF_PN, sizeof(OBF_PN));
+  text_y += lineHeight;
+  tft.setCursor(text_x, text_y);
+  tft.print("- Developed by: ");
+  tftPrintlnObf(OBF_DN, sizeof(OBF_DN));
+  text_y += lineHeight;
+  tft.setCursor(text_x, text_y);
+  tft.print("- Version: ");
+  tft.println(ESP32DIV_VERSION);
+  text_y += lineHeight;
+  tft.setCursor(text_x, text_y);
+  tft.print("- Contact: ");
+  tftPrintlnObf(OBF_EM, sizeof(OBF_EM));
+  text_y += lineHeight;
+  tft.setCursor(text_x, text_y);
+  tft.print("- GitHub: ");
+  tftPrintlnObf(OBF_GH, sizeof(OBF_GH));
+  text_y += lineHeight;
+  tft.setCursor(text_x, text_y);
+  tft.print("- Website: ");
+  tftPrintlnObf(OBF_WB, sizeof(OBF_WB));
+
+  tft.setTextFont(1);
+  tft.setCursor(10, 300);
+  tft.println("Press SELECT / touch to go back");
+
+  while (!feature_exit_requested) {
+    if (isButtonPressed(BTN_SELECT) || isButtonPressed(BTN_LEFT)) {
+      last_interaction_time = millis();
+      feature_exit_requested = true;
+      delay(200);
+      break;
+    }
+
+    int x, y;
+    if (readTouchXY(x, y)) {
+      last_interaction_time = millis();
+      feature_exit_requested = true;
+      delay(200);
+      break;
+    }
+
+    delay(20);
+  }
+
+  feature_active = false;
+  feature_exit_requested = false;
+  in_sub_menu = false;
+  submenu_initialized = false;
+
+  menu_initialized = false;
+  last_menu_index = -1;
+  is_main_menu = false;
+  displayMenu();
+}
+
+/**
+ * @brief 显示“设置”全屏页面
+ *
+ * 直接调用 AppSettingsUI::setup() 初始化设置界面，然后不断调用
+ * AppSettingsUI::loop() 直到用户要求退出（feature_exit_requested），
+ * 最后重绘主菜单。
+ */
+void handleSettingsSubmenuButtons() {
+
+  feature_active = true;
+  feature_exit_requested = false;
+
+  AppSettingsUI::setup();
+  while (!feature_exit_requested) {
+    AppSettingsUI::loop();
+  }
+
+  feature_active = false;
+  feature_exit_requested = false;
+
+  in_sub_menu = false;
+  submenu_initialized = false;
+
+  menu_initialized = false;
+  last_menu_index = -1;
+  is_main_menu = false;
+  displayMenu();
+}
+
+/**
+ * @brief 全局输入分发：把按键/触摸事件路由到对应的处理器
+ *
+ * 如果当前在子菜单（in_sub_menu==true）：
+ *   根据 current_menu_index 路由到各子菜单处理器
+ *   （0=WiFi、1=NRF、2=More、4=BLE、5=SubGHz、6=Tools；
+ *    3=Settings 和 7=About 使用全屏页不走这里）。
+ * 否则（主菜单）：
+ *   处理 UP/DOWN/LEFT/RIGHT 四方向移动光标（2×4 宫格环绕移动），
+ *   SELECT 进入对应子菜单（Settings/About 直接打开全屏页），
+ *   以及触摸屏点按方块的高亮反馈与确认。
+ */
+void handleButtons() {
+    if (in_sub_menu) {
+        switch (current_menu_index) {
+
+            case 0: handleWiFiSubmenuButtons(); break;
+            case 1: handleNRFSubmenuButtons(); break;
+            case 2: handleOtherSubmenuButtons(); break;
+            case 3: /* Settings: full-screen AppSettings, not list submenu */ break;
+            case 4: handleBluetoothSubmenuButtons(); break;
+            case 5: handleSubGHzSubmenuButtons(); break;
+            case 6: handleToolsSubmenuButtons(); break;
+            default: break;
+        }
+    } else {
+
+        if (isButtonPressed(BTN_UP) && !is_main_menu) {
+            current_menu_index--;
+            if (current_menu_index < 0) {
+                current_menu_index = NUM_MENU_ITEMS - 1;
+            }
+            last_interaction_time = millis();
+            displayMenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_DOWN) && !is_main_menu) {
+            current_menu_index++;
+            if (current_menu_index >= NUM_MENU_ITEMS) {
+                current_menu_index = 0;
+            }
+            last_interaction_time = millis();
+            displayMenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_LEFT) && !is_main_menu) {
+            int row = current_menu_index % 4;
+            if (current_menu_index >= 4) {
+                current_menu_index = row;
+            } else if (current_menu_index == 0) {
+                current_menu_index = 3;
+            } else {
+                current_menu_index = row - 1;
+            }
+            last_interaction_time = millis();
+            displayMenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_RIGHT) && !is_main_menu) {
+            int row = current_menu_index % 4;
+            if (current_menu_index < 4) {
+                current_menu_index = row + 4;
+            } else if (current_menu_index == 7) {
+                current_menu_index = 0;
+            } else {
+                current_menu_index = row + 5;
+            }
+            last_interaction_time = millis();
+            displayMenu();
+            delay(200);
+        }
+
+        if (isButtonPressed(BTN_SELECT)) {
+            last_interaction_time = millis();
+            delay(200);
+
+            if (current_menu_index == 3) {
+                handleSettingsSubmenuButtons();
+            } else if (current_menu_index == 7) {
+                handleAboutPage();
+            } else {
+                updateActiveSubmenu();
+
+                if (active_submenu_items && active_submenu_size > 0) {
+                    current_submenu_index = 0;
+                    if (current_menu_index == 2) {
+                        other_layer = OTHER_LAYER_HOME;
+                        other_menu_grid_initialized = false;
+                        last_other_menu_index = -1;
+                    }
+                    in_sub_menu = true;
+                    submenu_initialized = false;
+                    displaySubmenu();
+                }
+
+                if (is_main_menu) {
+                    is_main_menu = false;
+                    displayMenu();
+                } else {
+                    is_main_menu = true;
+                }
+            }
+        }
+
+        static unsigned long lastTouchTime = 0;
+        const unsigned long touchFeedbackDelay = 100;
+
+        if (!feature_active && (millis() - lastTouchTime >= touchFeedbackDelay)) {
+            int x, y;
+            if (!readTouchXY(x, y)) { return; }
+            delay(10);
+        for (int i = 0; i < NUM_MENU_ITEMS; i++) {
+                int column = i / 4;
+                int row = i % 4;
+                int x_position = (column == 0) ? X_OFFSET_LEFT : X_OFFSET_RIGHT;
+                int y_position = Y_START + row * Y_SPACING;
+
+                int button_x1 = x_position;
+                int button_y1 = y_position;
+                int button_x2 = x_position + 100;
+                int button_y2 = y_position + 60;
+
+                if (x >= button_x1 && x <= button_x2 && y >= button_y1 && y <= button_y2) {
+                    current_menu_index = i;
+                    last_interaction_time = millis();
+                    displayMenu();
+
+                    unsigned long startTime = millis();
+                    while (isTouchDownDismiss() && (millis() - startTime < touchFeedbackDelay)) {
+                        delay(10);
+                    }
+
+                    if (isTouchDownDismiss()) {
+
+                        if (current_menu_index == 3) {
+                            handleSettingsSubmenuButtons();
+                        } else if (current_menu_index == 7) {
+                            handleAboutPage();
+                        } else {
+                            updateActiveSubmenu();
+
+                            if (active_submenu_items && active_submenu_size > 0) {
+                                current_submenu_index = 0;
+                                if (current_menu_index == 2) {
+                                    other_layer = OTHER_LAYER_HOME;
+                                    other_menu_grid_initialized = false;
+                                    last_other_menu_index = -1;
+                                }
+                                in_sub_menu = true;
+                                submenu_initialized = false;
+                                displaySubmenu();
+                            } else {
+                                if (is_main_menu) {
+                                    is_main_menu = false;
+                                    displayMenu();
+                                } else {
+                                    is_main_menu = true;
+                                }
+                            }
+                        }
+                    }
+                    delay(200);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @brief 主程序初始化（Arduino 开机只执行一次）
+ *
+ * 执行顺序：
+ *   1. 串口 115200 初始化（调试日志输出）
+ *   2. TFT 屏幕初始化与旋转（TFT_ROTATION）
+ *   3. 背光 PWM 初始化并全亮（setBrightness(100)）
+ *   4. 应用主题配色 → 黑屏 → 画加载动画（loading()）→ 画 Logo
+ *   5. 初始化 SD 卡（initSDCard）→ 加载用户设置（settingsLoad）
+ *      → 按设置应用主题和背光亮度
+ *   6. 初始化 PCF8574 物理按键（若当前板型启用 HAS_PCF8574_BUTTONS）
+ *   7. 初始化 BLE 协议栈（BLEDevice::init）和 BLE 橡皮鸭（若启用 FEATURE_BLE_DUCKY）
+ *   8. 启动后台任务：WiFi 后台扫描、BLE 后台扫描、状态栏刷新任务
+ *   9. 绘制主菜单 + 状态栏（含电池电压）
+ *   10. 初始化触摸屏（setupTouchscreen）
+ *   11. 记录起始交互时间，串口输出 "[boot] ready"
+ */
+void setup() {
+
+  Serial.begin(115200);
+  Serial.println("[boot] start");
+
+  tft.init();
+  tft.setRotation(TFT_ROTATION);
+
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(BACKLIGHT_PIN, PWM_CHANNEL);
+  setBrightness(100);
+
+  applyThemeToPalette(settings().theme);
+
+  tft.fillScreen(TFT_BLACK);
+
+  loading(100, UI_ICON, 0, 0, 2, true);
+
+  tft.fillScreen(TFT_BLACK);
+
+  displayLogo(TFT_WHITE, 500);
+
+  initSDCard();
+
+  settingsLoad();
+  applyThemeToPalette(settings().theme);
+  setBrightness(settings().brightness);
+
+#if HAS_PCF8574_BUTTONS
+  if (!initPcf8574Buttons()) {
+    Serial.println("PCF8574 buttons unavailable");
+  }
+#else
+  Serial.println("PCF8574 buttons disabled for this board");
+#endif
+
+  Serial.println("[boot] BLE init");
+  BLEDevice::init(ESP32DIV_NAME);
+
+#if FEATURE_BLE_DUCKY
+  Ducky::setup();
+#endif
+
+  Serial.println("[boot] background tasks");
+  WifiScan::startBackgroundScanner();
+  BleScan::startBackgroundScanner();
+  startStatusBarTask();
+
+  Serial.println("[boot] draw menu");
+  menu_initialized = false;
+  currentBatteryVoltage = readBatteryVoltage();
+  displayMenu();
+  drawStatusBar(currentBatteryVoltage, false);
+
+  setupTouchscreen();
+
+  last_interaction_time = millis();
+  Serial.println("[boot] ready");
+}
+
+/**
+ * @brief 主循环（Arduino 反复执行）
+ *
+ * 每轮做三件事：
+ *   1. 应用当前主题配色（applyThemeToPalette）——用户切换主题后即时生效
+ *   2. 处理按键/触摸输入（handleButtons）
+ *   3. 刷新顶部状态栏（updateStatusBar，由后台任务驱动显示电池/时间等）
+ */
+void loop() {
+  applyThemeToPalette(settings().theme);
+  handleButtons();
+  updateStatusBar();
+}

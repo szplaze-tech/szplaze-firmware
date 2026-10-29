@@ -1,0 +1,281 @@
+# ESP32-DIV 界面英文字符串清单（去重 278 条）
+# 格式: [出现次数] 字符串
+
+[ 9] Back to Main Menu
+[ 9] Touch to retry or Back
+[ 7] Press Rescan.
+[ 7] Scanning.
+[ 7] Starting SD Update...
+[ 6] No networks found.
+[ 5] Activity
+[ 4] Done!
+[ 4] Error:
+[ 4] Name:
+[ 4] Networks:
+[ 4] Wait a moment.
+[ 3] Freq:
+[ 3] Initializing...
+[ 3] Not paired/connected
+[ 3] RSSI:
+[ 3] Type:
+[ 3] Val:
+[ 2] (waiting for rejoin...)
+[ 2] ACTIVITY
+[ 2] ARP Scanner
+[ 2] Beacon Spammer
+[ 2] Bit:
+[ 2] Bits:
+[ 2] Captive Portal
+[ 2] Ch:
+[ 2] Deauth Detector
+[ 2] Delete FAILED
+[ 2] Device:
+[ 2] GPS
+[ 2] Hidden SSID Revealer
+[ 2] Info
+[ 2] Karma Attack
+[ 2] Live IR Scope
+[ 2] MAC
+[ 2] Main Menu
+[ 2] OK
+[ 2] Packet Monitor
+[ 2] Path:
+[ 2] Press Delete again to confirm
+[ 2] Probe Request Flood
+[ 2] Ptc:
+[ 2] RSSI
+[ 2] Read failed:
+[ 2] Rebooting...
+[ 2] Returning...
+[ 2] SD not mounted
+[ 2] SRC:
+[ 2] Saved Profile
+[ 2] Sending...
+[ 2] Serial Terminal Active
+[ 2] Settings
+[ 2] Size:
+[ 2] Update OK!
+[ 2] WPS Scanner
+[ 2] WiFi Deauther
+[ 2] WiFi Scanner
+[ 2] X
+[ 2] by
+[ 1] (This cannot be undone)
+[ 1] /ir_profiles.json
+[ 1] 0x
+[ 1] 2.4 GHz Spectrum
+[ 1] 2.4GHz
+[ 1] 2.4GHz Scanner
+[ 1] 802.11 monitor - standby
+[ 1] < Prev
+[ 1] A match is a warning only,
+[ 1] About
+[ 1] Access via browser
+[ 1] Add SD profiles:
+[ 1] AirTag Sniffer
+[ 1] AirTag Spoofer
+[ 1] BG
+[ 1] BLE Jammer
+[ 1] BLE Rubber Ducky
+[ 1] BLE Scanner
+[ 1] BLE Spoofer
+[ 1] BLE Status:
+[ 1] BLE: low memory
+[ 1] BSSID:
+[ 1] Back
+[ 1] Back  Check = save to SD
+[ 1] Bluetooth
+[ 1] Board
+[ 1] Brand:
+[ 1] CSV
+[ 1] Capture
+[ 1] Card Clone
+[ 1] Card Reader
+[ 1] Channel:
+[ 1] Clear
+[ 1] Clone Access Point
+[ 1] Connecting Wi-Fi
+[ 1] Continuity 0x07
+[ 1] Count
+[ 1] Credentials List:
+[ 1] De Bruijn / Brute
+[ 1] Decode Access
+[ 1] Default Delay:
+[ 1] Delete selected item?
+[ 1] Delete this script?
+[ 1] Description:
+[ 1] Details
+[ 1] Device Name:
+[ 1] Devices
+[ 1] Devices:
+[ 1] Display buffer failed
+[ 1] Disrupt Emulate
+[ 1] Double-tap to execute
+[ 1] Dump
+[ 1] Duty
+[ 1] ESB Replay
+[ 1] ESB Sniffer
+[ 1] Empty folder
+[ 1] Encryption:
+[ 1] Erase
+[ 1] Est. Distance:
+[ 1] Executing…
+[ 1] Exit and try again
+[ 1] Export
+[ 1] File:
+[ 1] Finding hidden SSIDs.
+[ 1] Freq
+[ 1] GitHub
+[ 1] Go start/stop
+[ 1] Hidden SSIDs:
+[ 1] IP:
+[ 1] IR Record
+[ 1] IR Remote
+[ 1] Idx:
+[ 1] Initializing SD...
+[ 1] Initializing [do not exit]
+[ 1] Inject
+[ 1] Insert SD / export fail
+[ 1] Insert SD card with
+[ 1] JDY, BT-05, and similar.
+[ 1] Jam Reader
+[ 1] Jamming Detector
+[ 1] Log
+[ 1] Looking for WPS APs.
+[ 1] Looks for: HC-05, HM-10,
+[ 1] MAC:
+[ 1] MODEL
+[ 1] Mail
+[ 1] Manufacturer:
+[ 1] Mode:
+[ 1] More
+[ 1] MouseJack Inject
+[ 1] MouseJack Scan
+[ 1] NFC Status
+[ 1] Next
+[ 1] No Manufacturer Data
+[ 1] No Service Data
+[ 1] No Service UUID
+[ 1] No WPS networks found.
+[ 1] No credentials
+[ 1] No devices found.
+[ 1] No fix yet
+[ 1] No hidden SSIDs found.
+[ 1] No hosts found.
+[ 1] No profiles on SD.
+[ 1] No script selected
+[ 1] No selection
+[ 1] No signal captured!
+[ 1] PROTO
+[ 1] Packet:
+[ 1] Packets
+[ 1] Pass
+[ 1] Pass: admin
+[ 1] Please Wait
+[ 1] Prev
+[ 1] Profile
+[ 1] Profile saved!
+[ 1] Profile storage full!
+[ 1] Profile:
+[ 1] Profiles saved:
+[ 1] Proto Kill
+[ 1] RF Status
+[ 1] RFID/NFC
+[ 1] ROWS
+[ 1] Raw:
+[ 1] Record
+[ 1] Replay
+[ 1] Replay Attack
+[ 1] Revealed SSID:
+[ 1] SAVE
+[ 1] SCANS
+[ 1] SD File Manager
+[ 1] SD Status:
+[ 1] SD Update
+[ 1] SD card OK
+[ 1] SD card not detected
+[ 1] SD card not inserted.
+[ 1] SD mount failed
+[ 1] SELECT / tap to go back
+[ 1] SSID
+[ 1] SSID:
+[ 1] Satellite Scanner
+[ 1] Scan Status
+[ 1] Scanner
+[ 1] Scanning WiFi
+[ 1] Scripts Found:
+[ 1] Sel focus   Prev/Next adjust
+[ 1] Select
+[ 1] Select Category
+[ 1] Sending
+[ 1] Serial Monitor
+[ 1] Service Data:
+[ 1] Service UUID:
+[ 1] Setup
+[ 1] Signal Status
+[ 1] Signal:
+[ 1] Skimmer Detect
+[ 1] Sniffer
+[ 1] Sour Apple
+[ 1] Src:
+[ 1] Starting Web OTA...
+[ 1] Startup failed
+[ 1] Status
+[ 1] Status:
+[ 1] Storage full!
+[ 1] SubGHz
+[ 1] SubGHz Jammer
+[ 1] TYPE
+[ 1] Tag Details
+[ 1] Tag Disrupt
+[ 1] Tap row or Pick to clone
+[ 1] Target: All hidden APs
+[ 1] Tools
+[ 1] Touch Calibrate
+[ 1] Touch Start to update
+[ 1] Touch and hold for more options
+[ 1] Touch the target
+[ 1] Touch to retry
+[ 1] Tx Power:
+[ 1] URL: http://esp32.local
+[ 1] Universal Controller
+[ 1] Update Firmware
+[ 1] Updating...
+[ 1] Use 'Refresh' to scan for scripts
+[ 1] Use icons above for quick actions
+[ 1] User
+[ 1] User: admin
+[ 1] Value:
+[ 1] WPS Networks:
+[ 1] Wardrive
+[ 1] Wardriver
+[ 1] Web
+[ 1] Web OTA Started...
+[ 1] Web server ready!
+[ 1] Wi-Fi OK
+[ 1] WiFi
+[ 1] WiGLE config
+[ 1] X File open failed!
+[ 1] X Finalize failed!
+[ 1] X Firmware not found!
+[ 1] X SD init failed!
+[ 1] X Update Failed!
+[ 1] X Update failed!
+[ 1] X Update init failed!
+[ 1] X Wi-Fi failed!
+[ 1] X mDNS failed!
+[ 1] [!!] Press [Select] to exit
+[ 1] [!!] Random flood mode
+[ 1] [!] Press [UP] to start
+[ 1] [*] Configuring channel to (
+[ 1] bytes
+[ 1] current
+[ 1] dBm
+[ 1] firmware.bin in root
+[ 1] kHz:
+[ 1] m
+[ 1] mDNS OK
+[ 1] ms
+[ 1] no file
+[ 1] not proof of a skimmer.
+[ 1] or /ir_profiles/*.json

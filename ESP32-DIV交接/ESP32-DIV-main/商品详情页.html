@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ESP32-DIV 复刻版 · 商品详情页</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #14171c; display: flex; justify-content: center;
+         font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  .page { width: 750px; background: #0e1116; color: #e6edf3; }
+
+  .hero { padding: 44px 40px 36px; background:
+          radial-gradient(circle at 78% 12%, rgba(255,122,0,.22), transparent 58%),
+          linear-gradient(160deg, #171b22 0%, #0e1116 100%); }
+  .kicker { display: inline-block; font-size: 12px; letter-spacing: 2px; color: #ff9d3c;
+            border: 1px solid rgba(255,157,60,.45); border-radius: 999px;
+            padding: 4px 12px; margin-bottom: 18px; }
+  .hero h1 { font-size: 34px; line-height: 1.28; font-weight: 800; letter-spacing: .5px; }
+  .hero h1 em { font-style: normal; color: #ff9d3c; }
+  .hero p.sub { margin-top: 14px; font-size: 15px; line-height: 1.85; color: #9aa7b4; }
+  .chips { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 12.5px; padding: 6px 12px; border-radius: 6px;
+          background: rgba(80,190,255,.10); border: 1px solid rgba(80,190,255,.32); color: #6fd0ff; }
+
+  .imgbox { margin: 0 40px; height: 300px; border: 1px dashed #39424e; border-radius: 10px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #5d6875; font-size: 13px; gap: 6px; background: #12161c; }
+  .imgbox b { color: #8b98a6; font-size: 14px; font-weight: 600; }
+
+  section { padding: 34px 40px; border-top: 1px solid #1e242c; }
+  h2 { font-size: 20px; font-weight: 700; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+  h2::before { content: ""; width: 4px; height: 18px; border-radius: 2px;
+               background: linear-gradient(#ff9d3c, #ff6a00); }
+  h2 span { font-size: 12px; color: #5d6875; font-weight: 400; letter-spacing: 1px; }
+
+  .grid5 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .card { background: #151a21; border: 1px solid #212933; border-radius: 10px; padding: 16px 16px 15px; }
+  .card .n { font-size: 12px; color: #ff9d3c; font-weight: 700; letter-spacing: 1px; }
+  .card h3 { font-size: 15px; margin: 6px 0 7px; font-weight: 700; }
+  .card p { font-size: 13px; line-height: 1.7; color: #93a0ad; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  tr { border-bottom: 1px solid #1c2229; }
+  tr:last-child { border-bottom: 0; }
+  td { padding: 11px 4px; vertical-align: top; }
+  td.k { width: 132px; color: #7d8b99; }
+  td.v { color: #dbe4ec; }
+  td.v b { color: #ff9d3c; font-weight: 600; }
+
+  .mods { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .mod { background: #151a21; border: 1px solid #212933; border-radius: 10px; padding: 14px 15px; }
+  .mod h4 { font-size: 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .mod h4 i { font-style: normal; font-size: 11px; color: #6fd0ff; font-weight: 400; }
+  .mod ul { list-style: none; font-size: 12.5px; line-height: 1.95; color: #93a0ad; }
+  .mod li::before { content: "·"; color: #ff9d3c; margin-right: 6px; font-weight: 700; }
+
+  .uses { font-size: 13.5px; line-height: 2.05; color: #93a0ad; }
+  .uses b { color: #dbe4ec; font-weight: 600; }
+
+  .warn { margin: 0 40px 0; padding: 16px 18px; border-radius: 10px;
+          background: rgba(255,90,90,.07); border: 1px solid rgba(255,90,90,.28); }
+  .warn h4 { font-size: 14px; color: #ff8a8a; margin-bottom: 9px; }
+  .warn p { font-size: 12.5px; line-height: 1.9; color: #b9a6a6; }
+
+  .todo { color: #ffd166; background: rgba(255,209,102,.10); padding: 1px 6px;
+          border-radius: 4px; font-size: 12px; }
+  footer { padding: 26px 40px 40px; font-size: 11.5px; line-height: 1.9; color: #4e5763;
+           border-top: 1px solid #1e242c; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===== 头部 ===== -->
+  <div class="hero">
+    <span class="kicker">ESP32-S3 · 多频段无线实验平台</span>
+    <h1>一台上手就用的<br><em>掌上无线学习开发板</em></h1>
+    <p class="sub">
+      2.4 英寸触摸屏 · 中文图形界面 · 免电脑操作<br>
+      Wi-Fi / 2.4GHz / Sub-GHz / 蓝牙 / 红外 / 卫星定位 六大频段，一块板子全都能玩。<br>
+      固件完全开源，硬件为自研 V2 版本，模块化设计，适合上手学习与二次开发。
+    </p>
+    <div class="chips">
+      <span class="chip">ESP32-S3 主控</span>
+      <span class="chip">16MB Flash</span>
+      <span class="chip">触摸屏 UI</span>
+      <span class="chip">开源固件</span>
+      <span class="chip">Type-C 供电</span>
+      <span class="chip">内置锂电管理</span>
+      <span class="chip">中文界面</span>
+    </div>
+  </div>
+
+  <div style="height:30px"></div>
+  <div class="imgbox">
+    <b>此处放实拍主图</b>
+    <span>建议尺寸 750 × 300px（板子正面斜 45° + 屏幕点亮效果）</span>
+  </div>
+  <div style="height:30px"></div>
+
+  <!-- ===== 五大卖点 ===== -->
+  <section>
+    <h2>为什么选它 <span>WHY THIS BOARD</span></h2>
+    <div class="grid5">
+      <div class="card">
+        <div class="n">01</div>
+        <h3>六大频段，一板集成</h3>
+        <p>Wi-Fi、2.4GHz、Sub-GHz、蓝牙、红外、卫星定位全部内置，不用再买一堆零散模块。</p>
+      </div>
+      <div class="card">
+        <div class="n">02</div>
+        <h3>2.4 寸触摸屏，脱机可用</h3>
+        <p>全图形化中文界面，插上电池就能用，不依赖手机 App 和电脑。</p>
+      </div>
+      <div class="card">
+        <div class="n">03</div>
+        <h3>固件开源，随时改</h3>
+        <p>完整 Arduino 工程源码，模块化分层，改界面、加功能都很方便。</p>
+      </div>
+      <div class="card">
+        <div class="n">04</div>
+        <h3>硬件可扩展</h3>
+        <p>Sub-GHz、2.4GHz、RFID、GNSS 均为独立模块位，可自由升级更换。</p>
+      </div>
+      <div class="card">
+        <div class="n">05</div>
+        <h3>续航与充电一步到位</h3>
+        <p>内置锂电池接口 + 充电管理芯片，屏幕上直接显示电量百分比与充电状态。</p>
+      </div>
+      <div class="card">
+        <div class="n">06</div>
+        <h3>接上就能看数据</h3>
+        <p>支持 TF 卡记录、串口输出、屏幕曲线与列表，实验数据随手可取。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 硬件规格 ===== -->
+  <section>
+    <h2>硬件规格 <span>SPECIFICATIONS</span></h2>
+    <table>
+      <tr><td class="k">主控芯片</td><td class="v"><b>ESP32-S3-WROOM-1（N16R8）</b>　双核 240MHz，16MB Flash</td></tr>
+      <tr><td class="k">显示屏</td><td class="v">2.4 英寸 TFT，240×320，<b>电阻触摸</b>（XPT2046）</td></tr>
+      <tr><td class="k">Sub-GHz 射频</td><td class="v">CC1101 模块位，支持 315 / 433 / 868 / 915MHz 常用频段</td></tr>
+      <tr><td class="k">2.4GHz 射频</td><td class="v"><b>3 × nRF24L01 模块位</b>，多通道并行收发</td></tr>
+      <tr><td class="k">蓝牙</td><td class="v">ESP32-S3 内置 BLE 5.0</td></tr>
+      <tr><td class="k">Wi-Fi</td><td class="v">ESP32-S3 内置 2.4GHz 802.11 b/g/n</td></tr>
+      <tr><td class="k">红外</td><td class="v">红外发射 + 接收一体（38/40kHz 载波）</td></tr>
+      <tr><td class="k">定位</td><td class="v">预留 GNSS 串口接口（兼容 ATGM336H 等 NMEA 模块）</td></tr>
+      <tr><td class="k">RFID / NFC</td><td class="v">预留 PN532 接口（SPI，13.56MHz）</td></tr>
+      <tr><td class="k">存储</td><td class="v">microSD 卡槽（FAT32，用于记录与固件包）</td></tr>
+      <tr><td class="k">电源</td><td class="v">3.7V 锂电池接口 + <b>充电管理（IP5306）</b>，Type-C 输入</td></tr>
+      <tr><td class="k">扩展</td><td class="v">IO 扩展芯片、板载可编程 RGB 灯 ×4</td></tr>
+      <tr><td class="k">按键</td><td class="v">多功能物理按键 + 触摸操作，双操作方式</td></tr>
+      <tr><td class="k">外壳 / 尺寸</td><td class="v"><span class="todo">待填：如 96 × 62 × 18mm，ABS/打印外壳</span></td></tr>
+    </table>
+  </section>
+
+  <!-- ===== 功能模块 ===== -->
+  <section>
+    <h2>功能模块 <span>50+ 内置工具，8 大模块</span></h2>
+    <div class="mods">
+
+      <div class="mod">
+        <h4>Wi-Fi 工具集 <i>11 项</i></h4>
+        <ul>
+          <li>网络与信道扫描</li>
+          <li>报文监听与统计</li>
+          <li>管理帧监测告警</li>
+          <li>隐藏 SSID 识别</li>
+          <li>WPS / ARP 扫描</li>
+          <li>门户页面实验</li>
+          <li>信道占用可视化</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>2.4GHz 实验 <i>6 项</i></h4>
+        <ul>
+          <li>信道活动柱状图</li>
+          <li>数据包收发实验</li>
+          <li>ESB 抓包与回放</li>
+          <li>HID 报文分析</li>
+          <li>多通道跳频</li>
+          <li>自定义地址与速率</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>Sub-GHz 实验 <i>5 项</i></h4>
+        <ul>
+          <li>信号录制与回放</li>
+          <li>常用遥控编码学习</li>
+          <li>载波与调制实验</li>
+          <li>信号强度检测</li>
+          <li>已存档案管理</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>蓝牙 BLE <i>内置</i></h4>
+        <ul>
+          <li>设备发现与信息读取</li>
+          <li>广播报文分析</li>
+          <li>信道活动监测</li>
+          <li>外设交互实验</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>红外遥控 <i>3 项</i></h4>
+        <ul>
+          <li>码型录制</li>
+          <li>存档回放</li>
+          <li>万能遥控发送</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>RFID / NFC <i>8 项 · 需配 PN532</i></h4>
+        <ul>
+          <li>卡片信息读取</li>
+          <li>数据读取与转储</li>
+          <li>门禁权限位解析</li>
+          <li>卡片写入实验</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>卫星定位 <i>2 项 · 需配 GNSS</i></h4>
+        <ul>
+          <li>信号测绘（轨迹记录）</li>
+          <li>卫星扫描与天空图</li>
+          <li>信噪比列表与定位状态</li>
+        </ul>
+      </div>
+
+      <div class="mod">
+        <h4>系统工具 <i>4 项</i></h4>
+        <ul>
+          <li>串口监视器</li>
+          <li>在线固件升级</li>
+          <li>触摸屏校准</li>
+          <li>TF 卡文件管理</li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== 适用场景 ===== -->
+  <section>
+    <h2>适用场景 <span>WHAT IT'S FOR</span></h2>
+    <p class="uses">
+      · <b>嵌入式 / 物联网开发学习</b>：一块板子练完 ESP32-S3 的显示驱动、触摸、SPI 多从机、UART、SD 卡、电源管理。<br>
+      · <b>通信与无线电原理实验</b>：直观看到信道活动、调制波形、信号强度，把课本概念变成屏幕上的曲线。<br>
+      · <b>自有设备的无线链路自测</b>：检查自家路由器 / 遥控器 / 传感器的工作频段与信号质量。<br>
+      · <b>开源硬件二次开发</b>：完整源码 + 模块化硬件，适合作为毕业设计、创客项目的基础平台。<br>
+      · <b>教学演示</b>：图形界面 + 中文菜单，课堂演示无需额外接线。
+    </p>
+  </section>
+
+  <!-- ===== 包装清单 ===== -->
+  <section>
+    <h2>包装清单 <span>PACKAGE</span></h2>
+    <table>
+      <tr><td class="k">整机主板</td><td class="v">×1（含已焊接的 CC1101 / nRF24L01 模块，<span class="todo">按套餐确认</span>）</td></tr>
+      <tr><td class="k">Type-C 数据线</td><td class="v"><span class="todo">×1（选配）</span></td></tr>
+      <tr><td class="k">锂电池</td><td class="v"><span class="todo">×1（选配，按套餐）</span></td></tr>
+      <tr><td class="k">外壳</td><td class="v"><span class="todo">按套餐确认：裸板 / 带壳</span></td></tr>
+      <tr><td class="k">资料</td><td class="v">开源工程源码、烧录说明、常见问题文档（网盘链接）</td></tr>
+    </table>
+  </section>
+
+  <!-- ===== 注意事项 ===== -->
+  <div class="warn">
+    <h4>使用须知（请务必阅读）</h4>
+    <p>
+      1. 本产品为<b>嵌入式开发学习板</b>，面向具备基础电子 / 编程知识的开发者与爱好者。<br>
+      2. 请仅用于<b>自己拥有或已获得明确授权的设备</b>与场景；请勿用于任何未经许可的无线电发射、通信干扰或他人设备。<br>
+      3. 使用时须遵守《中华人民共和国无线电管理条例》及所在地相关法律法规，<b>不得干扰公共通信、广播、航空等合法无线电业务</b>。<br>
+      4. 部分功能需另配模块（GNSS 定位、PN532 RFID）方可使用，下单前请确认套餐。<br>
+      5. 因使用不当或违反法律法规所产生的后果，由使用者自行承担。
+    </p>
+  </div>
+  <div style="height:34px"></div>
+
+  <footer>
+    固件基于开源项目 <b>ESP32-DIV（cifertech）</b>，遵循 MIT 开源许可协议，本页已保留原作者署名。<br>
+    硬件为自研 V2 版本，固件与硬件均保留原始版权声明。<br>
+    本页规格随批次可能微调，以实物为准。<br>
+    <span class="todo">待补：生产商 / 售后联系方式 / 质保说明</span>
+  </footer>
+
+</div>
+</body>
+</html>

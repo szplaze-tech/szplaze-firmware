@@ -1,0 +1,6 @@
+﻿PID=16192 START=09/12/2026 09:49:49
+  CMD="C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" daemon --port 0 --config-file c:\Users\cxw\.arduinoIDE\arduino-cli.yaml -v
+PID=11672 START=09/12/2026 10:16:05
+  CMD="C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile --fqbn esp32:esp32:esp32s3:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=min_spiffs,DebugLevel
+PID=36800 START=09/12/2026 10:46:40
+  CMD="C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile --fqbn esp32:esp32:esp32s3:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=min_spiffs,DebugLevel

@@ -1,0 +1,447 @@
+# -*- coding: utf-8 -*-
+"""ESP32-DIV 中文界面生成器
+产出：
+  1) .workbuddy/i18n/zh_map_full.json   翻译对照表（trim 后的键）
+  2) ESP32-DIV/i18n_table.h             由 T() 使用的 {en, zh} 数组（自动补回尾随空格）
+  3) ESP32-DIV/zh_font.h / zh_font.cpp  12x12 与 16x16 双字号点阵字库（同一字符集）
+用法：python gen_all.py
+"""
+import json, os, re
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SKETCH = os.path.join(ROOT, 'ESP32-DIV')
+LIST_FILE = os.path.join(ROOT, '.workbuddy', 'ui_strings_en.txt')
+
+# ───────────────────────── 字源配置（想换字体/粗细只改这里） ─────────────────────────
+# 宋体在 12/16px 自带点阵字模（经典点阵宋体），远好于把矢量黑体缩到 12px 再二值化。
+FONT_PATH  = "C:/Windows/Fonts/simsun.ttc"   # 备选：simhei.ttf（更粗）/ msyh.ttc
+FONT_INDEX = 0                               # ttc 里的字体序号（0 = SimSun）
+FONT_THR   = 128                             # 二值化阈值（越小笔画越粗）
+REF_CHAR   = "国"                            # 用于统一基线/原点的满高参考字
+
+# ───────────────────────── 翻译表（键为 trim 后的英文原文） ─────────────────────────
+ZH = {
+    # ── 主菜单 / 顶层 ──
+    "WiFi": "WiFi", "2.4GHz": "2.4GHz", "More": "更多", "Settings": "设置",
+    "Bluetooth": "蓝牙", "SubGHz": "SubGHz", "Tools": "工具", "About": "关于",
+    "Main Menu": "主菜单", "Back to Main Menu": "返回主菜单", "Back": "返回",
+    # ── WiFi ──
+    "Packet Monitor": "数据包监视", "Beacon Spammer": "信标泛洪", "WiFi Deauther": "WiFi去认证",
+    "Probe Request Flood": "探测请求泛洪", "Deauth Detector": "去认证检测", "WiFi Scanner": "WiFi扫描",
+    "Captive Portal": "强制门户", "Hidden SSID Revealer": "隐藏SSID探测", "WPS Scanner": "WPS扫描",
+    "ARP Scanner": "ARP扫描", "Karma Attack": "Karma攻击", "Clone Access Point": "克隆接入点",
+    "Networks:": "网络数：", "No networks found.": "未发现网络", "Scanning.": "扫描中…",
+    "Press Rescan.": "按重新扫描", "Scanning WiFi": "扫描WiFi中",
+    "Finding hidden SSIDs.": "搜索隐藏SSID中", "Hidden SSIDs:": "隐藏SSID：",
+    "No hidden SSIDs found.": "未发现隐藏SSID", "Revealed SSID:": "已探测SSID：",
+    "Looking for WPS APs.": "搜索WPS热点中", "WPS Networks:": "WPS网络：",
+    "No WPS networks found.": "未发现WPS网络", "Target: All hidden APs": "目标：所有隐藏热点",
+    "No hosts found.": "未发现主机", "BSSID:": "BSSID：", "SSID:": "SSID：", "SSID": "SSID",
+    "Channel:": "信道：", "Encryption:": "加密：", "Signal:": "信号：", "Flags": "标志",
+    "Credentials List:": "凭据列表：", "No credentials": "无凭据", "Access via browser": "浏览器访问",
+    "Connect": "连接", "Connecting Wi-Fi": "连接Wi-Fi中", "Wi-Fi OK": "Wi-Fi正常",
+    "Scan Status": "扫描状态", "Signal Status": "信号状态",
+    # ── 蓝牙 ──
+    "BLE Jammer": "BLE干扰", "BLE Spoofer": "BLE伪装", "Sour Apple": "Sour Apple",
+    "AirTag Spoofer": "AirTag伪装", "AirTag Sniffer": "AirTag嗅探", "Sniffer": "蓝牙嗅探",
+    "BLE Scanner": "BLE扫描", "BLE Rubber Ducky": "BLE橡皮鸭", "Skimmer Detect": "侧录器检测",
+    "BLE Status:": "BLE状态：", "BLE: low memory": "BLE：内存不足",
+    "No Manufacturer Data": "无厂商数据", "No Service Data": "无服务数据",
+    "No Service UUID": "无服务UUID", "Service Data:": "服务数据：", "Service UUID:": "服务UUID：",
+    "A match is a warning only,": "匹配仅为警告，", "not proof of a skimmer.": "并非侧录器的证据。",
+    "Looks for: HC-05, HM-10,": "查找：HC-05、HM-10、", "JDY, BT-05, and similar.": "JDY、BT-05 等",
+    "Continuity 0x07": "Continuity 0x07", "Est. Distance:": "估计距离：",
+    # ── 2.4GHz ──
+    "Scanner": "无线扫描", "Proto Kill": "协议干扰", "ESB Sniffer": "ESB嗅探", "ESB Replay": "ESB重放",
+    "MouseJack Scan": "鼠标扫描", "MouseJack Inject": "鼠标注入", "2.4GHz Scanner": "2.4GHz扫描",
+    "2.4 GHz Spectrum": "2.4GHz频谱",
+    # ── SubGHz ──
+    "Replay Attack": "重放攻击", "SubGHz Jammer": "SubGHz干扰", "De Bruijn / Brute": "DeBruijn穷举",
+    "Jamming Detector": "干扰检测", "Saved Profile": "已存档案",
+    # ── 工具 / 其他 ──
+    "Serial Monitor": "串口终端", "Update Firmware": "固件更新", "Touch Calibrate": "触摸校准",
+    "SD File Manager": "SD文件管理", "SD Update": "SD更新", "IR Remote": "红外遥控",
+    "IR Record": "红外录制", "Live IR Scope": "实时红外示波", "RFID/NFC": "RFID/NFC", "GPS": "GPS",
+    "Record": "录制", "Universal Controller": "万能遥控", "Replay": "重放",
+    # ── RFID ──
+    "Card Reader": "卡片读取", "Card Clone": "卡片复制", "Erase": "擦除", "Dump": "转储",
+    "Decode Access": "门禁解析", "Jam Reader": "干扰读卡", "Tag Disrupt": "标签干扰",
+    "Disrupt Emulate": "干扰模拟", "Tag Details": "标签详情", "NFC Status": "NFC状态",
+    "RF Status": "射频状态", "Tap row or Pick to clone": "点击行或按 Pick 复制",
+    "Card Type:": "卡片类型：",
+    # ── GPS ──
+    "Wardriver": "信号测绘", "Wardrive": "信号测绘", "Satellite Scanner": "卫星扫描",
+    "No fix yet": "尚未定位", "WiGLE config": "WiGLE配置",
+    # ── 设置 ──
+    "Brightness": "亮度", "Theme": "主题", "Accent": "配色", "NeoPixel": "灯珠",
+    "Auto Scan": "自动扫描", "Language": "语言", "Board": "板卡",
+    # 息屏超时：只用到 息/屏/超/时 四字，均已存在于 zh_font.cpp（灭火幕秒钟省 缺，
+    # 所以不写"熄灭/屏幕/秒/分钟/省电"这类词）。改文案前先查字库！
+    "Screen Off": "息屏超时",
+    # ── 按钮 / 标签 ──
+    "Stop": "停止", "Start": "开始", "Force": "强制", "Split": "分屏", "Sky": "天空",
+    "Signals": "信号", "Ch:": "信道：", "Pkts": "包数", "Saved": "已存", "Found": "发现",
+    "Mode:": "模式：", "Mode": "模式", "State": "状态", "Target": "目标", "Payload": "载荷",
+    "Select": "选择", "Select Category": "选择类别", "Next": "下一个", "Prev": "上一个",
+    "< Prev": "< 上一页", "Clear": "清除", "Export": "导出", "Inject": "注入",
+    "Capture": "捕获", "Log": "日志", "Info": "信息", "Details": "详情", "Profile": "档案",
+    "Devices": "设备", "Devices:": "设备数：", "Packets": "数据包", "Packet:": "数据包：",
+    "Activity": "活动", "ACTIVITY": "活动", "Setup": "设置", "Status": "状态",
+    "Status:": "状态：", "Count": "计数", "Pass": "通过", "User": "用户", "Mail": "邮件",
+    "Web": "网页", "OK": "确定", "SAVE": "保存", "Duty": "占空比", "Idx:": "序号：",
+    "X": "X", "by": "作者", "current": "当前", "no file": "无文件", "bytes": "字节",
+    # ── 状态 / 提示 ──
+    "Wait a moment.": "请稍候…", "Done!": "完成！", "Error:": "错误：", "Initializing...": "初始化…",
+    "Sending...": "发送中…", "Rebooting...": "重启中…", "Update OK!": "更新成功！",
+    "Touch to retry or Back": "触摸重试或返回", "Touch to retry": "触摸重试",
+    "Not paired/connected": "未配对/未连接", "SD not mounted": "SD未挂载", "Returning...": "返回中…",
+    "Serial Terminal Active": "串口终端已激活", "Sending": "发送中", "No signal captured!": "未捕获到信号！",
+    "Please Wait": "请稍候", "Executing…": "执行中…", "Updating...": "更新中…",
+    "Startup failed": "启动失败", "Exit and try again": "退出后重试",
+    "Display buffer failed": "显示缓冲失败", "Empty folder": "空文件夹",
+    "No devices found.": "未发现设备", "No profiles on SD.": "SD卡无档案",
+    "No script selected": "未选择脚本", "No selection": "未选择",
+    "Double-tap to execute": "双击执行", "Touch the target": "触摸目标",
+    "Touch and hold for more options": "长按查看更多选项",
+    "Use icons above for quick actions": "用上方图标快速操作",
+    "(waiting for rejoin...)": "(等待重新加入…)",
+    # ── SD / 存储 ──
+    "SD Status:": "SD状态：", "SD card OK": "SD卡正常", "SD card not detected": "未检测到SD卡",
+    "SD card not inserted.": "未插入SD卡", "SD mount failed": "SD挂载失败",
+    "Initializing SD...": "初始化SD…", "Initializing [do not exit]": "初始化中[请勿退出]",
+    "Starting SD Update...": "开始SD更新…", "Storage full!": "存储已满！",
+    "Insert SD / export fail": "插入SD/导出失败", "Insert SD card with": "插入SD卡，含",
+    "firmware.bin in root": "根目录下的 firmware.bin", "Add SD profiles:": "添加SD档案：",
+    "Profile saved!": "档案已保存！", "Profile storage full!": "档案存储已满！",
+    "Profiles saved:": "已保存档案：", "Profile:": "档案：", "File:": "文件：",
+    "Path:": "路径：", "Size:": "大小：", "Name:": "名称：", "Date:": "日期：",
+    "Delete FAILED": "删除失败", "Delete selected item?": "删除选中项？",
+    "Delete this script?": "删除此脚本？", "Press Delete again to confirm": "再按一次删除确认",
+    "(This cannot be undone)": "(此操作不可撤销)", "Scripts Found:": "发现脚本：",
+    "Use 'Refresh' to scan for scripts": "用「刷新」扫描脚本",
+    "Read failed:": "读取失败：", "Back  Check = save to SD": "返回  勾选=存入SD",
+    # ── Web / OTA ──
+    "Starting Web OTA...": "启动Web OTA…", "Web OTA Started...": "Web OTA已启动…",
+    "Web server ready!": "Web服务器就绪！", "Touch Start to update": "触摸开始以更新",
+    "mDNS OK": "mDNS正常", "Go start/stop": "去启动/停止",
+    # ── 字段标签 ──
+    "Freq:": "频率：", "Freq": "频率", "RSSI:": "RSSI：", "RSSI": "RSSI", "MAC": "MAC",
+    "MAC:": "MAC：", "IP:": "IP：", "Type:": "类型：", "TYPE": "类型", "Value:": "数值：",
+    "Val:": "值：", "Bit:": "位长：", "Bits:": "位长：", "Ptc:": "协议：", "PROTO": "协议",
+    "MODEL": "型号", "MAKE": "厂商", "ROWS": "行数", "SCANS": "扫描数", "CSV": "CSV",
+    "BG": "BG", "Raw:": "原始：", "Src:": "来源：", "SRC:": "来源：", "Size": "大小",
+    "Device:": "设备：", "Device Name:": "设备名称：", "Manufacturer:": "厂商：",
+    "Brand:": "品牌：", "Description:": "描述：", "Default Delay:": "默认延时：",
+    "Tx Power:": "发射功率：", "URL: http://esp32.local": "网址：http://esp32.local",
+    "Sel focus   Prev/Next adjust": "选择焦点  上一个/下一个调整",
+    "SELECT / tap to go back": "SELECT/点击返回",
+    # ── 错误提示 ──
+    "X File open failed!": "× 文件打开失败！", "X Finalize failed!": "× 收尾失败！",
+    "X Firmware not found!": "× 未找到固件！", "X SD init failed!": "× SD初始化失败！",
+    "X Update Failed!": "× 更新失败！", "X Update failed!": "× 更新失败！",
+    "X Update init failed!": "× 更新初始化失败！", "X Wi-Fi failed!": "× Wi-Fi失败！",
+    "X mDNS failed!": "× mDNS失败！",
+    # ── 符号 / 提示行 ──
+    "[!!] Press [Select] to exit": "[!!] 按[选择]退出",
+    "[!!] Random flood mode": "[!!] 随机泛洪模式",
+    "[!] Press [UP] to start": "[!] 按[上]开始",
+    "[*] Configuring channel to (":"[*] 配置信道至 (",
+    # ── 调制 / 射频（功能内） ──
+    "ASK/OOK": "ASK/OOK", "OOK": "OOK", "Noise": "噪声", "Continuous": "连续",
+    # ── 导航栏 / 按钮标签（这些是"函数参数字面量"，首版抽取器只扫 tft.print 字面量，漏了它们。
+    #    按钮仅约 40px 宽 → 译文控制在 3 字以内，否则会被 uiFitText 裁成 "X..."）──
+    "Exit": "退出", "Save": "保存", "Delete": "删除", "Scan": "扫描", "Rescan": "重扫",
+    "Prev": "上页", "Next": "下页", "Sel": "选择", "Pick": "选取", "Open": "打开",
+    "Run": "运行", "Add": "添加", "Clone": "复制", "Upload": "上传", "List": "列表",
+    "Log": "记录", "Hop": "跳频", "Arm": "布防", "Play": "播放", "Pause": "暂停",
+    "Fire": "发射", "TX": "发射", "Toggle": "切换", "Type": "类型", "View": "查看",
+    "Send": "发送", "Reset": "复位", "Reload": "重载", "Reveal": "探测", "Browse": "浏览",
+    "Listen": "监听", "Join": "加入", "Go": "执行", "Flood": "泛洪", "Ready": "就绪",
+    "Active": "活跃", "Auto": "自动", "Baud": "波特", "Cal": "校准", "Clr": "清除",
+    "Creds": "凭据", "Model": "型号", "Power": "开关", "Pay": "载荷", "Progress": "进度",
+    "RSS": "RSS", "Web OTA": "Web OTA", "WiGLE": "WiGLE",
+    "Ch+": "信道+", "Ch-": "信道-", "Freq+": "频率+", "Freq-": "频率-",
+    "Mode+": "模式+", "Mode-": "模式-", "Rep+": "重复+", "Rep-": "重复-",
+    # ── 标题 / 提示 ──
+    "No changes": "无更改", "Save FAILED": "保存失败", "Confirm delete": "确认删除",
+    "File info": "文件信息", "Script details": "脚本详情", "BLE Ducky": "BLE 橡皮鸭",
+    "This feature requires ESP32-S3.": "此功能需要 ESP32-S3。",
+    # ── 分页按钮 ──
+    "Next Page": "下一页", "Prev Page": "上一页", "Unknown": "未知",
+    # ── IR 遥控器按键 / 设备类型（已核对：这些短词只出现在 ir.cpp 的按键标签，
+    #    无跨用途冲突；按钮宽 60~72px，中文完全放得下）──
+    "PWR": "电源", "MUTE": "静音", "VOL+": "音量+", "VOL-": "音量-",
+    "CH+": "频道+", "CH-": "频道-", "UP": "上", "DOWN": "下",
+    "LEFT": "左", "RIGHT": "右", "BACK": "返回",
+    "TV": "电视", "AVR": "功放", "AC": "空调", "STB": "机顶盒",
+    "GAME": "游戏", "FIT": "健身", "PROJECTOR": "投影", "UNKNOWN": "未知",
+    # ── WiFi / GPS 认证方式 ──
+    "OPEN": "开放",
+    # ── SubGHz：干扰检测 / 已存档案 / 干扰器（audit_literals.py 全量审计得出）──
+    #    注意：T() 已支持"尾随空白不敏感"，所以这里写不带尾随空格的键即可，
+    #    代码里的 "Idle   " / "MAN " / "Name: " 都能命中。
+    "Monitor": "监视器", "Signal": "信号",
+    "CLEAR": "无干扰", "JAMMING DETECTED": "检测到干扰", "ACTIVITY": "有活动",
+    "on": "开", "off": "关",
+    "Idle": "空闲", "Jamming": "干扰中", "Running": "运行中", "Stopped": "已停止",
+    "Jamming started": "干扰已启动", "Jamming stopped": "干扰已停止",
+    "Jamming mode:": "干扰模式：", "Frequency mode:": "频率模式：",
+    "Continuous Carrier": "连续载波", "Cont": "连续",
+    "SubGHz Detected": "检测到SubGHz",
+    "AUTO": "自动", "Automatic": "自动", "MAN": "手动", "Manual": "手动",
+    "Shuffle": "随机", "DECODE": "解码", "Bits": "位长", "Done": "完成",
+    "Switched to:": "已切换到：",
+    # 已存档案：文件/名字类提示
+    "No profiles found": "未找到档案", "No free filename": "无可用文件名",
+    "No /subghz": "无 /subghz 目录",
+    "Locate failed": "定位失败", "Seek failed": "定位失败", "Read failed": "读取失败",
+    "Write failed": "写入失败", "Open failed": "打开失败",
+    "Open dir failed": "打开目录失败", "Open write failed": "打开写入失败",
+    "Name cannot be empty!": "名称不能为空！", "Wrong file": "文件错误",
+    "Bad header": "头部错误", "Size mismatch": "大小不匹配",
+    "File not found": "未找到文件", "Index OOR": "索引越界",
+    "(max 15 chars, ^ caps, # sym)": "(最多15字符, ^大写, #符号)",
+    "[!] Set a name for the saved profile.": "[!] 请先为档案命名。",
+    # 信号/档案类别
+    "Beacon": "信标", "DoorLock": "门锁", "GateOpener": "道闸", "KeyFob": "遥控器",
+    "Remote": "遥控", "Control": "控制", "Switch": "开关", "Pulse": "脉冲",
+    "Brute": "穷举", "De Bruijn": "DeBruijn", "RFTest": "射频测试", "Proto": "协议",
+    "LOCK": "锁定",
+    # ══════════ 批次 2：各模块界面字符串（audit_literals.py 全量审计得出）══════════
+    # 有意不翻：品牌/器件型号（HC-05/JDY-08/AT-09…）、IR 协议名（NEC/SONY/SAMSUNG…）、
+    #           WiFi 伪造热点名（FreeWiFi / Cheese_Bandit…是"发射出去的数据"，翻了会改变行为）
+    # ── 通用 / 工具 ──
+    "Cancel": "取消", "OK": "确定", "Failed": "失败", "Refresh": "刷新",
+    "Dark": "深色", "Light": "浅色",
+    "Folder": "文件夹", "File": "文件", "DIR": "目录", "Items:": "项目：",
+    "Delete failed": "删除失败", "Not a directory": "不是目录",
+    "Nothing selected": "未选择", "Calibration Saved": "校准已保存",
+    "Cannot delete ..": "无法删除 ..", "DEEPSLEEP": "深度睡眠", "OTHER": "其他",
+    # ── GPS ──
+    "Zenith": "天顶", "GNSS Satellites": "GNSS卫星", "Strongest signals": "最强信号",
+    "FIX": "定位", "FIX 2D": "二维定位", "FIX 3D": "三维定位", "NOFIX": "未定位",
+    "DOP": "精度因子", "Waiting for position / GGA": "等待定位 / GGA",
+    "SELECT or bottom tap exits": "按 SELECT 或点底部退出",
+    # ── RFID ──
+    "Tag detected": "检测到标签", "Tag lost": "标签丢失", "No tag detected": "未检测到标签",
+    "Waiting for tag...": "等待标签…", "Waiting for reader...": "等待读卡器…",
+    "Clone finished.": "复制完成。", "Dump aborted.": "转储已中止。",
+    "Reading Classic blocks": "读取 Classic 块", "Reading user pages": "读取用户页",
+    "Aborted": "已中止", "Timeout": "超时", "Unsupported": "不支持",
+    "Unknown Device": "未知设备", "Complete": "完成", "Incomplete": "未完成",
+    "Blank tag detected": "检测到空白标签", "Auth failed": "认证失败",
+    "Writing copied blocks": "写入复制块", "Writing copied pages": "写入复制页",
+    # ── WiFi（不含伪造 SSID 数据）──
+    "Status: Active": "状态：运行中", "Status: Inactive": "状态：已停止",
+    "Status: Listening": "状态：监听中", "Status: Running": "状态：运行中",
+    "Status: Stopped": "状态：已停止", "Status: Forcing reveal": "状态：强制探测",
+    "Password:": "密码：", "Username:": "用户名：", "IP Address:": "IP地址：",
+    "Loading...": "加载中…", "Connecting.": "连接中。", "Scanning...": "扫描中…",
+    "Join Network:": "加入网络：", "Current SSID:": "当前SSID：",
+    "No credentials found": "未找到凭据", "Credential storage full": "凭据存储已满",
+    "Looking for networks.": "搜索网络中", "Listening for probes...": "监听探测请求…",
+    "Del": "删除", "ENT": "确认",
+    # ── 蓝牙 / BLE ──
+    "Scanning": "扫描中", "IDLE": "空闲", "LIVE": "实时", "Paused": "已暂停",
+    "Playing": "播放中", "Armed": "已布防", "Activated": "已激活", "Deactivated": "已停用",
+    "Suspect": "可疑", "not available": "不可用", "Strength:": "强度：", "Peak:": "峰值：",
+    "State: Monitoring": "状态：监听中", "Injecting...": "注入中…",
+    "Listening for AirTags...": "监听 AirTag…", "Press Start to begin": "按开始启动",
+    "Press Start to scan": "按开始扫描", "Channel hop": "跳频", "Fixed": "固定",
+    "No suspects yet": "暂无发现", "Scanning for suspects.": "搜索可疑设备中",
+    # ── 红外（协议名保留英文）──
+    "Waveform": "波形", "State: Captured": "状态：已捕获",
+    "State: Listening": "状态：监听中", "State: Sending": "状态：发送中",
+    "No IR captures": "无红外记录", "Built-in profiles": "内置档案",
+    "No capture to save yet.": "暂无可保存的记录。",
+    "Carrier:": "载波：", "Key:": "按键：", "Repeat:": "重复：",
+    "Address": "地址", "Addr": "地址", "Auto:": "自动：",
+    "Command": "命令", "Cmd": "命令", "Raw:": "原始：", "Loaded": "已加载",
+    "Bad file": "文件错误", "JSON parse failed": "JSON解析失败",
+    # ── RFID / NFC 界面（技术名 MIFARE / Ultralight / NTAG / DESFire / ISO14443A 保留）──
+    "CAUTION": "注意", "DETAILS": "详情", "INFO": "信息", "PROGRESS": "进度",
+    "READY": "就绪", "RESULT": "结果", "WARN": "警告", "WRITE": "写入",
+    "SCAN": "扫描", "JAM": "干扰", "ALL": "全部", "RFID": "RFID",
+    "Fail": "失败", "Finished": "已完成", "Lost": "丢失", "Skipped": "已跳过",
+    "Type mismatch": "类型不匹配", "No tag": "无标签",
+    "Mode:": "模式：", "Reader:": "读卡器：", "Reader: PN532": "读卡器：PN532",
+    "Waiting for reader": "等待读卡器",
+    "Jam active": "干扰中", "Disrupt active": "干扰中",
+    "Flooding external reader": "淹没外部读卡器",
+    "Reader RF collision / flood": "读卡器射频冲突/淹没",
+    "Rotating trailer pattern": "轮换尾块模式",
+    "Classic tag": "Classic 标签",
+    "Protocol: ISO14443A": "协议：ISO14443A",
+    "Step 1/4 — Present SOURCE tag": "步骤1/4 — 放置源标签",
+    "Step 2/4 — Read source": "步骤2/4 — 读取源",
+    "Step 3/4 — Confirm clone": "步骤3/4 — 确认复制",
+    "Step 4/4 — Present BLANK tag": "步骤4/4 — 放置空白标签",
+    "[+] Blank": "[+] 空白", "[+] Source": "[+] 源",
+    "[+] Reader detected": "[+] 检测到读卡器",
+    "[+] Reader reconnected": "[+] 读卡器已重连",
+    "[+] Tag detected": "[+] 检测到标签",
+    "[*] Ready — listening again...": "[*] 就绪 — 重新监听…",
+    "[*] Ready — waiting for reader...": "[*] 就绪 — 等待读卡器…",
+    "[*] Waiting for external reader...": "[*] 等待外部读卡器…",
+    "[*] Waiting for tag...": "[*] 等待标签…",
+    # ── 红外：状态 / 错误提示（协议名 NEC/SONY/RC5… 与设备品牌名保留英文）──
+    "Bad khz": "频率无效", "Bad protocol": "协议无效", "Bad rawLen": "原始长度无效",
+    "No profiles": "无档案", "SD not available": "SD卡不可用",
+    "Open file failed": "打开文件失败", "Raw read failed": "原始读取失败",
+    "Read hdr failed": "读取头部失败", "Read raw failed": "读取原始数据失败",
+    "Cannot create /ir": "无法创建 /ir", "No /ir": "无 /ir 目录",
+    "No profiles in /ir_profiles/": "/ir_profiles/ 中无档案",
+    "No /ir_profiles.json or /ir_profiles/": "无 /ir_profiles.json 或 /ir_profiles/",
+    "Key not available in this profile": "此档案无该按键",
+    "Protocol not enabled in build": "此版本未启用该协议",
+    "Too many files in /ir": "/ir 中文件过多",
+    "[!] Name this IR capture": "[!] 请为此红外记录命名",
+    "[!] No capture for auto": "[!] 无可用于自动的记录",
+    "Graph: +/- zoom  tap L/R pan": "图形：+/- 缩放  点按左右平移",
+    # ── 设置界面补漏 ──
+    "ON": "开", "OFF": "关",
+    "[Dark]": "[深色]", "[Light]": "[浅色]",
+    # ── WiFi 门户 / 监控模式 ──
+    "802.11 monitor - standby": "802.11 监听 - 待机",
+    "User: admin": "用户：admin", "Pass: admin": "密码：admin",
+    # ── GPS 卫星扫描面板（离屏 sprite 通道，2026-09-16 补） ──
+    "no GSV": "无GSV数据",
+    "Center=overhead  Edge=horizon": "中心=天顶  边缘=地平线",
+    "Touch: L/R view  center scroll": "触摸:左右切换视图  中间滚动",
+    "Touch: edge L/R switches view": "触摸:点边缘左右切换视图",
+    "ring=fix": "环=定位",
+    # ── 信号测绘启动失败屏（原来的"启动失败"标题是中文、详情却是英文） ──
+    "SD card required. Insert card and try again.": "需要 SD 卡。请插入后重试。",
+    "Could not create log file on SD.": "无法在 SD 卡上创建日志文件。",
+    "Could not start scan worker.": "无法启动扫描任务。",
+    "API name and token are required.": "需要填写 API 名称和 token。",
+    "Cannot create /config on SD.": "无法在 SD 卡创建 /config 目录。",
+    "Cannot write wigle.txt": "无法写入 wigle.txt",
+    "Saved /config/wigle.txt": "已保存 /config/wigle.txt",
+    "SD:/config/wigle.txt — line1: WiGLE API name, line2: token. If this ESP32 already joined Wi‑Fi once, stop at line 2. Else add line3=SSID line4=password. Optional line3 AUTO or - uses saved Wi‑Fi only.": "SD:/config/wigle.txt — 第1行: WiGLE API 名称, 第2行: token。若本机已连过 Wi‑Fi，写到第2行即可；否则加 第3行=SSID 第4行=密码。第3行也可写 AUTO 或 - 表示只用已保存的 Wi‑Fi。",
+    "Auth encode failed.": "认证编码失败。",
+    "Could not write temp CSV on SD.": "无法在 SD 卡写入临时 CSV。",
+    "Could not read ward CSV or convert.": "无法读取测绘 CSV 或转换。",
+    "Converted file empty or missing.": "转换后的文件为空或缺失。",
+    "Upload OK. Check wigle.net uploads.": "上传成功。请到 wigle.net 查看。",
+    "Background run already active.": "后台测绘已在运行。",
+    "SD required for background log.": "后台记录需要 SD 卡。",
+    "Could not start background task.": "无法启动后台任务。",
+    "Running in background. Open Wardriver to stop.": "已转入后台运行，回到信号测绘可停止。",
+    "Turn Auto Wi-Fi off (tap bottom row) to edit SSID.": "关闭自动 Wi-Fi（点底行）后可改 SSID。",
+    "Turn Auto Wi-Fi off to edit password.": "关闭自动 Wi-Fi 后可改密码。",
+    "Stop background wardriver first.": "请先停止后台测绘。",
+    "No CSV (foreground log only).": "无 CSV（仅前台记录）。",
+    "SD required for WiGLE config.": "WiGLE 配置需要 SD 卡。",
+    "Turn logging on (play), then tap RSS for Auto.": "先开启记录（播放键），再点 RSS 设为自动。",
+}
+
+# ───────────────────────── 1) 读清单，生成精确键（含尾随空格） ─────────────────────────
+entries = []          # (en_exact, zh_exact)
+missing = set()
+if os.path.exists(LIST_FILE):
+    for ln in open(LIST_FILE, encoding='utf-8').read().split('\n'):
+        if not ln.startswith('[') or len(ln) < 6:
+            continue
+        en = ln[5:]                       # 前缀 "[ n] " 固定 5 字符
+        key = en.rstrip()
+        if not key:
+            continue
+        if key in ZH:
+            entries.append((en, ZH[key] + en[len(key):]))
+        else:
+            missing.add(en)
+
+# 表里其它（非清单内）的条目也补进去，保证 T() 覆盖完整
+have = {e for e, _ in entries}
+for k, v in ZH.items():
+    if k not in {x.rstrip() for x, _ in entries} and k not in have:
+        entries.append((k, v))
+
+print("翻译条目: %d" % len(entries))
+print("清单中未翻译: %d %s" % (len(missing), sorted(missing)[:12]))
+
+# ───────────────────────── 2) 生成 i18n_table.h ─────────────────────────
+os.makedirs(os.path.join(ROOT, '.workbuddy', 'i18n'), exist_ok=True)
+with open(os.path.join(ROOT, '.workbuddy', 'i18n', 'zh_map_full.json'), 'w', encoding='utf-8') as f:
+    json.dump(ZH, f, ensure_ascii=False, indent=1)
+
+def cstr(s):
+    out = s.replace('\\', '\\\\').replace('"', '\\"')
+    return '"%s"' % out
+
+lines = ["// 自动生成（gen_all.py）—— 英文->中文对照表，勿手工编辑",
+         "#pragma once", "", "struct I18nEntry { const char* en; const char* zh; };", "",
+         "static const I18nEntry kI18n[] = {"]
+for en, zh in sorted(entries, key=lambda t: t[0]):
+    lines.append("  {%-28s %s}," % (cstr(en) + ",", cstr(zh)))
+lines += ["};", "", "static const size_t kI18nCount = sizeof(kI18n) / sizeof(kI18n[0]);", ""]
+open(os.path.join(SKETCH, 'i18n_table.h'), 'w', encoding='utf-8').write('\n'.join(lines))
+print("生成: ESP32-DIV/i18n_table.h")
+
+# ───────────────────────── 3) 生成 12x12 / 16x16 双字号字库 ─────────────────────────
+from PIL import Image, ImageDraw, ImageFont
+
+chars = sorted({ch for _, zh in entries for ch in zh if ord(ch) >= 0x80})
+print("非 ASCII 字形数: %d" % len(chars))
+
+def make_bitmaps(size):
+    """用宋体的点阵字模生成；所有字共用同一原点（基线一致），避免逐字浮动。
+    字体/阈值可调：FONT_PATH / FONT_INDEX / FONT_THR / REF_CHAR。"""
+    font = ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX)
+    bw = (size * size + 7) // 8
+    ref = font.getbbox(REF_CHAR)                  # 满高参考字 → 统一原点
+    rw, rh = ref[2] - ref[0], ref[3] - ref[1]
+    ox = (size - rw) // 2 - ref[0]
+    oy = (size - rh) // 2 - ref[1]
+    out = []
+    for ch in chars:
+        img = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(img).text((ox, oy), ch, font=font, fill=255)
+        px = img.load()
+        data = bytearray(bw)
+        for j in range(size):
+            for i in range(size):
+                if px[i, j] > FONT_THR:
+                    k = j * size + i
+                    data[k >> 3] |= (0x80 >> (k & 7))
+        out.append(bytes(data))
+    return bw, out
+
+b12, bm12 = make_bitmaps(12)
+b16, bm16 = make_bitmaps(16)
+
+hdr = """// 自动生成（gen_all.py）—— 中文点阵字库，勿手工编辑
+// 同一字符集两套字号：12x12（功能内文字）/ 16x16（菜单文字）
+#pragma once
+#include <Arduino.h>
+
+#define ZH12_W      12
+#define ZH12_H      12
+#define ZH12_BYTES  %d
+#define ZH16_W      16
+#define ZH16_H      16
+#define ZH16_BYTES  %d
+#define ZH_FONT_COUNT %d
+
+// 升序 Unicode 索引（两套字号共用同一顺序）
+extern const uint16_t zhUnicode[ZH_FONT_COUNT];
+extern const uint8_t  zhFont12[ZH_FONT_COUNT][ZH12_BYTES];
+extern const uint8_t  zhFont16[ZH_FONT_COUNT][ZH16_BYTES];
+""" % (b12, b16, len(chars))
+open(os.path.join(SKETCH, 'zh_font.h'), 'w', encoding='utf-8').write(hdr)
+
+with open(os.path.join(SKETCH, 'zh_font.cpp'), 'w', encoding='utf-8') as f:
+    f.write('#include "zh_font.h"\n\n')
+    f.write('const uint16_t zhUnicode[ZH_FONT_COUNT] = {\n')
+    for i in range(0, len(chars), 12):
+        f.write("  " + ", ".join("0x%04X" % ord(c) for c in chars[i:i+12]) + ",\n")
+    f.write('};\n\n')
+    for name, bm in (('zhFont12', bm12), ('zhFont16', bm16)):
+        f.write('const uint8_t %s[ZH_FONT_COUNT][%d] = {\n' % (name, len(bm[0])))
+        for c, d in zip(chars, bm):
+            f.write("  {" + ",".join("0x%02X" % x for x in d) + "}, // %s\n" % c)
+        f.write('};\n\n')
+
+print("生成: ESP32-DIV/zh_font.h / zh_font.cpp")
+print("字库大小: 12x12 %d B + 16x16 %d B = %d B" % (len(chars)*b12, len(chars)*b16, len(chars)*(b12+b16)))

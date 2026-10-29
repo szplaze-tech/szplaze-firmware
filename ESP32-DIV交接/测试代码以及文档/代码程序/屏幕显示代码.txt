@@ -1,0 +1,37 @@
+#include <TFT_eSPI.h>
+#include <U8g2_for_TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+U8g2_for_TFT_eSPI u8f;
+
+void setup()
+{
+  tft.begin();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+
+  u8f.begin(tft);
+
+  // 大量中文字体
+  u8f.setFont(u8g2_font_wqy16_t_gb2312);
+
+  // 白色
+  u8f.setForegroundColor(TFT_WHITE);
+
+  // 显示中文
+  u8f.setCursor(10,40);
+  u8f.print("你好，我是姚工");
+
+  u8f.setCursor(10,70);
+  u8f.print("ESP32-S3中文测试");
+
+  u8f.setCursor(10,100);
+  u8f.print("温度 湿度 电压 电流");
+
+}
+
+void loop()
+{
+
+}

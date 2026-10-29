@@ -1,0 +1,11 @@
+REM Name: Android Demo
+REM Description: 适用于已配对的安卓手机。
+REM 安卓对 BLE 键盘主要只支持字符输入，GUI/CTRL 等组合键基本无效，
+REM 所以本脚本只用 STRING + ENTER 验证注入通道是否通畅。
+REM 用法：先在手机上把光标放到任意输入框（备忘录/搜索框/浏览器地址栏），再 Run 本脚本。
+
+STRING Android BLE keyboard test OK
+ENTER
+DELAY 300
+STRING Injected by ESP32-DIV
+ENTER

@@ -1,0 +1,28 @@
+name: Keil Build and Release
+on:
+  workflow_dispatch
+  # push:
+  #   tags: [ "v*" ]
+jobs:
+  build:
+    runs-on: [ self-hosted, keil ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Keil command line build
+        shell: cmd
+        run: |
+          "C:\Keil_v5\UV4\UV4.exe" -b MDK-ARM\Project.uvprojx -j0 -o build_log.txt
+          type MDK-ARM\build_log.txt
+          if errorlevel 1 exit /b 1
+      - name: Collect artifacts
+        shell: cmd
+        run: |
+          mkdir release
+          for /r MDK-ARM %f in (*.hex *.bin *.axf) do copy "%f" release\
+      - name: Create Release and upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

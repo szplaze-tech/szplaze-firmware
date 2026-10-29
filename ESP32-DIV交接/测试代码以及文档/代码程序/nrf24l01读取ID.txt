@@ -1,0 +1,118 @@
+#include <TFT_eSPI.h>
+#include <U8g2_for_TFT_eSPI.h>
+#include <WiFi.h>
+#include <WebServer.h>
+
+TFT_eSPI tft = TFT_eSPI();
+U8g2_for_TFT_eSPI u8f;
+WebServer server(80);
+
+#define SCK     12
+#define MOSI    11
+#define MISO    13
+
+#define U1_CE   15
+#define U1_CSN  4
+#define U2_CE   47
+#define U2_CSN  48
+#define U3_CE   14
+#define U3_CSN  21
+
+uint8_t id1=0xFF,id2=0xFF,id3=0xFF;
+
+uint8_t softReadId(uint8_t targetCsn)
+{
+  digitalWrite(U1_CSN,HIGH);
+  digitalWrite(U2_CSN,HIGH);
+  digitalWrite(U3_CSN,HIGH);
+
+  digitalWrite(targetCsn, LOW);
+  uint8_t cmd = 0x07;
+  uint8_t ret = 0;
+
+  for(int b=7;b>=0;b--){
+    digitalWrite(MOSI,(cmd>>b)&1);
+    digitalWrite(SCK,HIGH);
+    digitalWrite(SCK,LOW);
+  }
+  for(int b=7;b>=0;b--){
+    ret <<=1;
+    digitalWrite(SCK,HIGH);
+    ret |= digitalRead(MISO);
+    digitalWrite(SCK,LOW);
+  }
+  digitalWrite(targetCsn,HIGH);
+  return ret;
+}
+
+void handleRoot()
+{
+  String page = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta http-equiv='refresh' content='1'>";
+  page += "<title>单板NRF检测</title></head><body>";
+  page += "<h2>单ESP32‑S3 多nRF检测</h2>";
+  page += "<p>U1(ID=0x"+String(id1,HEX)+") "+ ((id1==0x7E)?"✅SPI正常":"❌异常") +"</p>";
+  page += "<p>U2(ID=0x"+String(id2,HEX)+") "+ ((id2==0x7E)?"✅SPI正常":"❌异常") +"</p>";
+  page += "<p>U3(ID=0x"+String(id3,HEX)+") "+ ((id3==0x7E)?"✅SPI正常":"❌异常") +"</p>";
+  page += "<p>正确ID=0x7E</p>";
+  page += "<p>⚠️警告：单板子无法测试射频收发好坏！只能测SPI通信。</p>";
+  page += "</body></html>";
+  server.send(200,"text/html",page);
+}
+
+void showText(const char* text, int x, int y)
+{
+  u8f.setCursor(x,y);
+  u8f.print(text);
+}
+
+void setup()
+{
+  tft.begin();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+  u8f.begin(tft);
+  u8f.setFont(u8g2_font_wqy16_t_gb2312);
+  u8f.setForegroundColor(TFT_WHITE);
+
+  pinMode(SCK,OUTPUT);
+  pinMode(MOSI,OUTPUT);
+  pinMode(MISO,INPUT);
+  pinMode(U1_CE,OUTPUT); pinMode(U1_CSN,OUTPUT);
+  pinMode(U2_CE,OUTPUT); pinMode(U2_CSN,OUTPUT);
+  pinMode(U3_CE,OUTPUT); pinMode(U3_CSN,OUTPUT);
+
+  digitalWrite(U1_CSN,HIGH);
+  digitalWrite(U2_CSN,HIGH);
+  digitalWrite(U3_CSN,HIGH);
+  digitalWrite(U1_CE,LOW);
+  digitalWrite(U2_CE,LOW);
+  digitalWrite(U3_CE,LOW);
+
+  WiFi.softAP("ESP‑NRF‑Single","12345678");
+  IPAddress ip = WiFi.softAPIP();
+  char ipBuf[40];
+  sprintf(ipBuf,"AP:%d.%d.%d.%d",ip[0],ip[1],ip[2],ip[3]);
+  showText(ipBuf,5,10);
+
+  server.on("/",handleRoot);
+  server.begin();
+}
+
+void loop()
+{
+  server.handleClient();
+  id1 = softReadId(U1_CSN);
+  id2 = softReadId(U2_CSN);
+  id3 = softReadId(U3_CSN);
+
+  tft.fillScreen(TFT_BLACK);
+  char buf[40];
+  sprintf(buf,"U1:0x%02X %s",id1,(id1==0x7E)?"OK":"ERR");
+  showText(buf,5,35);
+  sprintf(buf,"U2:0x%02X %s",id2,(id2==0x7E)?"OK":"ERR");
+  showText(buf,5,65);
+  sprintf(buf,"U3:0x%02X %s",id3,(id3==0x7E)?"OK":"ERR");
+  showText(buf,5,95);
+  showText("仅SPI检测，不测射频",5,130);
+  delay(700);
+}

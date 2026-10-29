@@ -1,0 +1,57 @@
+WIFI
+pack  -OK--抓包附件频道流量包
+Beacon spammer  --OK--发出大量wifi热点
+wifi deauther --OK--攻击2.4GWiFi，使周围手机等通信设备连接不上
+Probe request flood --OK  --ESP32的WiFi持续高频发射射频的硬件
+Deauth Detector  --OK --监听空中802.11解除认证帧，判断周围是否有人使用Deauther工具攻击wifi
+WIFI Scanner --OK--扫描周围wifi，查看名称，强度，通道，加密类型
+captive portal  --OK--伪热点，克隆和目标路由器同名的伪热点。
+Hidden SSID Revealer  --OK--隐藏SSID破解器，查找WiFi名字
+WPS Scanner --OK--WPS功能扫描器，WPS路由器一键配对功能。
+ARP Scanner --OK --连接WIFI
+Karma Attack--OK--冒充WIFI，然后弹出钓鱼网站，获取账号密码。
+
+Bluetooth蓝牙
+BLE Jammer---NO--干扰蓝牙连接，使通信断开。现在功能在我现在蓝牙测试没有用。
+BLE Spoofer --OK--蓝牙欺骗器，模拟各种蓝牙设备
+Sour Apple --ON（有时）--对苹果手机模仿蓝牙设备
+airtag spoofer--OK（有时）--对苹果手机模仿蓝牙设备
+airtag sniffer--OK--蓝牙嗅探器，监听各种苹果设备
+sniffer--OK--持续扫描周围蓝牙设备列表，信号强度，等
+BLE Scanner --OK--扫描周围蓝牙设备
+BLE rubber ducky --OK--蓝牙键盘模拟，通过蓝牙连接后，打开SD卡，执行里面的ducky脚本。
+Skimmer detect --OK--通过BLE扫描识别市面上的蓝牙串口透传模块，防范蓝牙侧录盗卡装置。
+
+2.4GHz无线模块
+Scanner --ON--扫描周围2.4G-ESB载波信号，没有扫描到。
+Proto Kill--ON--干扰周围2.4G无线键盘鼠标等，现在软件没问题，硬件扫描有问题
+ESP Sniffer--ON--读取周围频道数据，将数据打包到SD卡里面
+ESP replay --ON--将SD卡里面的.log数据包，重复发送出去，造成鼠标抽搐等。
+Mouse jack scan --OK--可以扫描到2.4G无线鼠标
+Mouse jack inject--ON--软件初始化没问题，但是识别不到设备
+
+SubGHz
+replay attack --ON--没有获取正确数据，需要自己的433M315M等
+SubGHz Jammer--ON--连续干扰433M等频段，没有接收设备验证
+de bruijn/brutte --ON--针对老式433M等频段的器件发送一整套编码，尝试触发设备
+Jamming dettector--ON--环境监测工具，查看周围是否有人为发射干扰检测器
+ssaaved profile --ON--查看抓包的保存射频信号文件
+
+More
+More--IR Remote 
+Record --OK--接收红外信号，解码出来并且可以保存
+Saved Profile--OK--查看保存记录的红外记录文件
+universal controller--OK--内置红外发射器，编码着各种仪器的红外通信，可以模拟红外遥控。
+
+More--RFID/NFC
+//找不到PN532芯片，请检查SPI接线通信。
+
+More--GPS
+Wardriv--ON--GPS检测不到
+satellite Scanner--OK--豆包说有数据出现GNSS信号可以接收到，现在信号不好所以，检测不到卫星。
+
+Tools
+serial Monitor--ON--串口监视器
+Update Firmware --ON--固件升级，从SD卡或者网络OTA升级
+Touch Calibrate --OK--触摸屏校准
+SD File Manager --OK--SD卡文件管理器，可以查看SD卡里面的数据类型。

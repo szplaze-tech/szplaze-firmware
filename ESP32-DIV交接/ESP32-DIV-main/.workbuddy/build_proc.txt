@@ -1,0 +1,18 @@
+﻿
+ProcessName    Id     CPU        WS StartTime         
+-----------    --     ---        -- ---------         
+arduino-cli 11672 16.0625 106500096 2026/9/12 10:16:05
+arduino-cli 16192 319.625 148578304 2026/9/12 9:49:49 
+arduino-cli 36800    7.75 157835264 2026/9/12 10:46:40
+
+
+
+=== CPU load ===
+
+
+LoadPercentage            : 20
+NumberOfLogicalProcessors : 12
+
+
+
+

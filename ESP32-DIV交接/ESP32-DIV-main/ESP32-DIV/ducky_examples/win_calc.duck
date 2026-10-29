@@ -1,0 +1,9 @@
+REM Name: Windows Calculator Demo
+REM Description: 仅适用于已配对的 Windows 电脑（需把设备识别为蓝牙键盘）。
+REM 动作：打开"运行"对话框(Win+R)，输入 calc 并回车，启动计算器。
+REM 在手机等非 Windows host 上此脚本无效。
+
+GUI r
+DELAY 400
+STRING calc
+ENTER

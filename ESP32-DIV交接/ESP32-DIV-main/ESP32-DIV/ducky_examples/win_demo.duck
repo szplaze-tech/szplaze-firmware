@@ -1,0 +1,14 @@
+REM Name: Windows Demo
+REM Description: 适用于已配对的 Windows 电脑（需把设备识别为蓝牙键盘）。
+REM 动作：Win+R 打开"运行" -> 启动记事本 -> 输入两行测试文字。
+REM 风险：低。仅在 Windows 桌面有焦点时运行。
+
+GUI r
+DELAY 400
+STRING notepad
+ENTER
+DELAY 800
+STRING Hello from ESP32-DIV BLE Ducky on Windows!
+ENTER
+STRING Injection test passed.
+ENTER

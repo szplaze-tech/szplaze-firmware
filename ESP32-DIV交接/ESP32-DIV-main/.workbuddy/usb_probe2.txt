@@ -1,0 +1,31 @@
+﻿HWIDS:
+USB\VID_11CA&PID_0204&REV_0100
+USB\VID_11CA&PID_0204
+
+COMPAT:
+USB\COMPAT_VID_11CA&Class_FF&SubClass_00&Prot_00
+USB\COMPAT_VID_11CA&Class_FF&SubClass_00
+USB\COMPAT_VID_11CA&Class_FF
+USB\Class_FF&SubClass_00&Prot_00
+USB\Class_FF&SubClass_00
+USB\Class_FF
+
+PROVIDER:
+PROBLEM:
+ARRIVAL:09/07/2026 17:03:10
+
+SLAB_INF_FILES:
+
+
+STORE_MATCHES:
+
+  WHCP 版本:      未知
+  
+  发布名称:     oem36.inf
+> 原始名称:      silabser.inf
+  提供程序名称:      Silicon Laboratories Inc.
+  类名:         Ports
+  类 GUID:         {4d36e978-e325-11ce-bfc1-08002be10318}
+
+
+

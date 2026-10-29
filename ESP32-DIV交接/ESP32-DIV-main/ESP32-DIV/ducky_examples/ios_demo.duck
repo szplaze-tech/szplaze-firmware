@@ -1,0 +1,14 @@
+REM Name: iOS Demo (iPhone / iPad)
+REM Description: 适用于已配对的 iPhone 或 iPad。
+REM iOS 会将 HID 的 GUI 修饰键映射为 Command(⌘) 键，因此 GUI 组合在 iOS 上可用。
+REM 演示：Cmd+Space 打开 Spotlight 搜索，输入文字（不回车，避免意外打开 App）。
+REM 纯文本输入在任意聚焦输入框也有效，下方注释行给出了纯文本备选方案。
+
+GUI SPACE
+DELAY 500
+STRING esp32div
+DELAY 500
+
+REM --- 备选：纯文本输入（把光标放到 iPhone 任意输入框后，删除上面三行并取消下面两行注释）---
+REM STRING Hello from ESP32-DIV on iOS
+REM ENTER

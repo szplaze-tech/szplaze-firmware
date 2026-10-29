@@ -1,0 +1,54 @@
+﻿=== ALL PRESENT USB DEVICES ===
+
+Status Class     FriendlyName                           InstanceId                                                                 
+------ -----     ------------                           ----------                                                                 
+Error            VeriFone USB to UART Bridge Controller USB\VID_11CA&PID_0204\0001                                                 
+OK     Bluetooth 英特尔(R) 无线 Bluetooth(R)                 USB\VID_8087&PID_0033\5&EF00746&0&10                                       
+OK     Camera    BisonCam,NB Pro                        USB\VID_5986&PID_9102&MI_00\6&1986C649&0&0000                              
+OK     DiskDrive  USB  SanDisk 3.2Gen1 USB Device       USBSTOR\DISK&VEN__USB&PROD__SANDISK_3.2GEN1&REV_1.00\00005313081621155323&0
+OK     HIDClass  USB 输入设备                               USB\VID_10C4&PID_0005\7&1069D870&0&3                                       
+OK     HIDClass  USB 输入设备                               USB\VID_413C&PID_2113&MI_00\8&204A7C42&0&0000                              
+OK     HIDClass  USB 输入设备                               USB\VID_413C&PID_2113&MI_01\8&204A7C42&0&0001                              
+OK     USB       USB 根集线器(USB 3.0)                      USB\ROOT_HUB30\4&538F04C&0&0                                               
+OK     USB       USB 大容量存储设备                            USB\VID_0781&PID_5591\00005313081621155323                                 
+OK     USB       USB Composite Device                   USB\VID_413C&PID_2113\7&1069D870&0&2                                       
+OK     USB       通用 USB 集线器                             USB\VID_05E3&PID_0608\5&EF00746&0&4                                        
+OK     USB       通用 USB 集线器                             USB\VID_05E3&PID_0608\6&2CF9411D&0&2                                       
+OK     USB       USB Composite Device                   USB\VID_5986&PID_9102\5&EF00746&0&8                                        
+
+
+
+=== DEVICES WITH PROBLEMS ===
+
+Status Class FriendlyName                           InstanceId                                Problem
+------ ----- ------------                           ----------                                -------
+Error        VeriFone USB to UART Bridge Controller USB\VID_11CA&PID_0204\0001 CM_PROB_FAILED_INSTALL
+
+
+
+=== PORTS CLASS ===
+
+Status FriendlyName      InstanceId                                                                                              
+------ ------------      ----------                                                                                              
+OK     蓝牙链接上的标准串行 (COM3) BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000\7&259C2D73&0&000000000000_00000002         
+OK     蓝牙链接上的标准串行 (COM4) BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_VID&000105D6_PID&000A\7&259C2D73&0&90EF4A7EED77_C00000000
+
+
+
+=== VID_10C4 SEARCH (any state, incl. hidden) ===
+
+Status  Present Class    FriendlyName        InstanceId                             
+------  ------- -----    ------------        ----------                             
+Unknown   False HIDClass USB 输入设备            USB\VID_10C4&PID_0005\5&EF00746&0&2    
+Unknown   False HIDClass USB 输入设备            USB\VID_10C4&PID_0005\5&EF00746&0&4    
+OK         True Mouse    HID-compliant mouse HID\VID_10C4&PID_0005\8&D3F5E86&0&0000 
+Unknown   False Mouse    HID-compliant mouse HID\VID_10C4&PID_0005\6&23AED543&0&0000
+Unknown   False Mouse    HID-compliant mouse HID\VID_10C4&PID_0005\8&183402C4&0&0000
+Unknown   False Mouse    HID-compliant mouse HID\VID_10C4&PID_0005\8&57A521F&0&0000 
+Unknown   False Mouse    HID-compliant mouse HID\VID_10C4&PID_0005\6&40D6B5E&0&0000 
+Unknown   False HIDClass USB 输入设备            USB\VID_10C4&PID_0005\7&1069D870&0&1   
+Unknown   False HIDClass USB 输入设备            USB\VID_10C4&PID_0005\7&1069D870&0&2   
+OK         True HIDClass USB 输入设备            USB\VID_10C4&PID_0005\7&1069D870&0&3   
+
+
+

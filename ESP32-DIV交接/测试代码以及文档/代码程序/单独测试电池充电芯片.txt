@@ -1,0 +1,729 @@
+#include <Wire.h>
+#include <TFT_eSPI.h>
+#include <U8g2_for_TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+U8g2_for_TFT_eSPI u8f;
+
+
+// =====================================================
+// ESP32-S3 ↔ IP5306
+// =====================================================
+
+#define SDA_PIN 8
+#define SCL_PIN 9
+
+#define IP5306_ADDR 0x75
+
+// 电池电压检测 GPIO2
+#define BATTERY_ADC_PIN 2
+
+
+// =====================================================
+// I2C 通信速度
+//
+// 100000 = 100kHz
+// 50000  = 50kHz
+// 25000  = 25kHz
+//
+// 这里使用 50kHz，提高 IP5306 通信稳定性
+// =====================================================
+
+#define I2C_SPEED 50000
+
+
+// =====================================================
+// IP5306 寄存器
+// =====================================================
+
+#define REG_CHG_CTL0       0x20
+#define REG_CHG_CURRENT    0x24
+
+#define REG_READ0          0x70
+#define REG_READ1          0x71
+#define REG_READ2          0x72
+#define REG_READ4          0x78
+
+
+// =====================================================
+// 读取 IP5306 寄存器
+// =====================================================
+
+uint8_t readIP5306(uint8_t reg)
+{
+  Wire.beginTransmission((uint8_t)IP5306_ADDR);
+
+  Wire.write(reg);
+
+  // 不释放总线，进行 repeated start
+  if (Wire.endTransmission(false) != 0)
+  {
+    return 0xFF;
+  }
+
+  // 强制转换为 uint8_t
+  // 兼容 ESP32 Arduino Core 2.0.10
+  Wire.requestFrom(
+    (uint8_t)IP5306_ADDR,
+    (uint8_t)1
+  );
+
+  if (Wire.available())
+  {
+    return (uint8_t)Wire.read();
+  }
+
+  return 0xFF;
+}
+
+
+// =====================================================
+// 检测某个 I2C 地址
+// =====================================================
+
+bool checkI2CAddress(uint8_t address)
+{
+  Wire.beginTransmission(address);
+
+  uint8_t error = Wire.endTransmission();
+
+  return (error == 0);
+}
+
+
+// =====================================================
+// 检测 IP5306
+// =====================================================
+
+bool ip5306Exists()
+{
+  return checkI2CAddress(
+    (uint8_t)IP5306_ADDR
+  );
+}
+
+
+// =====================================================
+// I2C 扫描
+// =====================================================
+
+int scanI2C()
+{
+  int found = 0;
+
+  for (uint8_t address = 1;
+       address < 127;
+       address++)
+  {
+    Wire.beginTransmission(address);
+
+    uint8_t error =
+      Wire.endTransmission();
+
+    if (error == 0)
+    {
+      found++;
+
+      // 如果找到 IP5306
+      if (address == IP5306_ADDR)
+      {
+        return address;
+      }
+    }
+
+    delay(2);
+  }
+
+  return found > 0 ? 1 : 0;
+}
+
+
+// =====================================================
+// 显示扫描界面
+// =====================================================
+
+void showScanning()
+{
+  tft.fillScreen(TFT_BLACK);
+
+  u8f.setForegroundColor(TFT_WHITE);
+
+  u8f.setCursor(10, 30);
+  u8f.print("IP5306 电源管理");
+
+  u8f.setCursor(10, 65);
+  u8f.print("正在扫描 I2C...");
+
+  u8f.setCursor(10, 100);
+  u8f.print("SDA: GPIO8");
+
+  u8f.setCursor(10, 125);
+  u8f.print("SCL: GPIO9");
+
+  u8f.setCursor(10, 150);
+  u8f.print("速度: 50 kHz");
+
+  u8f.setCursor(10, 190);
+  u8f.print("目标地址: 0x75");
+
+  u8f.setCursor(10, 225);
+  u8f.print("等待 IP5306...");
+}
+
+
+// =====================================================
+// IP5306 未连接
+// =====================================================
+
+void showNotFound()
+{
+  tft.fillScreen(TFT_BLACK);
+
+  u8f.setForegroundColor(TFT_RED);
+
+  u8f.setCursor(10, 30);
+  u8f.print("IP5306 未连接");
+
+  u8f.setForegroundColor(TFT_WHITE);
+
+  u8f.setCursor(10, 65);
+  u8f.print("I2C 扫描不到 0x75");
+
+  u8f.setCursor(10, 100);
+  u8f.print("SDA: GPIO8");
+
+  u8f.setCursor(10, 125);
+  u8f.print("SCL: GPIO9");
+
+  u8f.setCursor(10, 150);
+  u8f.print("I2C: 50 kHz");
+
+  u8f.setCursor(10, 190);
+  u8f.print("500ms 后重新扫描");
+
+  u8f.setCursor(10, 225);
+  u8f.print("请检查 SDA / SCL");
+}
+
+
+// =====================================================
+// 获取电池电压
+//
+// GPIO2 = VBAT / 2
+// 所以 VBAT = GPIO2 × 2
+// =====================================================
+
+float getBatteryVoltage()
+{
+  uint32_t mv =
+    analogReadMilliVolts(
+      BATTERY_ADC_PIN
+    );
+
+  float gpioVoltage =
+    mv / 1000.0;
+
+  float batteryVoltage =
+    gpioVoltage * 2.0;
+
+  return batteryVoltage;
+}
+
+
+// =====================================================
+// 获取电池电量
+// =====================================================
+
+int getBatteryLevel()
+{
+  uint8_t data =
+    readIP5306(REG_READ4);
+
+  if (data == 0xFF)
+  {
+    return -1;
+  }
+
+  switch (data & 0xF0)
+  {
+    case 0x00:
+      return 100;
+
+    case 0x80:
+      return 75;
+
+    case 0xC0:
+      return 50;
+
+    case 0xE0:
+      return 25;
+
+    default:
+      return 0;
+  }
+}
+
+
+// =====================================================
+// 获取充电电流设定值
+// =====================================================
+
+float getChargeCurrent()
+{
+  uint8_t data =
+    readIP5306(
+      REG_CHG_CURRENT
+    );
+
+  if (data == 0xFF)
+  {
+    return -1;
+  }
+
+  data &= 0x1F;
+
+  float current = 0.05;
+
+  if (data & 0x01)
+    current += 0.10;
+
+  if (data & 0x02)
+    current += 0.20;
+
+  if (data & 0x04)
+    current += 0.40;
+
+  if (data & 0x08)
+    current += 0.80;
+
+  if (data & 0x10)
+    current += 1.60;
+
+  return current;
+}
+
+
+// =====================================================
+// 获取截止电压
+// =====================================================
+
+float getCutoffVoltage()
+{
+  uint8_t data =
+    readIP5306(
+      REG_CHG_CTL0
+    );
+
+  if (data == 0xFF)
+  {
+    return -1;
+  }
+
+  switch (data & 0x03)
+  {
+    case 0:
+      return 4.14;
+
+    case 1:
+      return 4.17;
+
+    case 2:
+      return 4.185;
+
+    case 3:
+      return 4.20;
+  }
+
+  return 4.20;
+}
+
+
+// =====================================================
+// 绘制电池图标
+// =====================================================
+
+void drawBattery(
+  int x,
+  int y,
+  int width,
+  int height,
+  int level
+)
+{
+  // 外框
+  tft.drawRect(
+    x,
+    y,
+    width,
+    height,
+    TFT_WHITE
+  );
+
+  // 正极
+  tft.fillRect(
+    x + width,
+    y + height / 3,
+    4,
+    height / 3,
+    TFT_WHITE
+  );
+
+  if (level <= 0)
+    return;
+
+  int fillWidth =
+    (width - 4) * level / 100;
+
+  tft.fillRect(
+    x + 2,
+    y + 2,
+    fillWidth,
+    height - 4,
+    TFT_GREEN
+  );
+}
+
+
+// =====================================================
+// IP5306 主显示界面
+// =====================================================
+
+void showIP5306Info()
+{
+  tft.fillScreen(TFT_BLACK);
+
+  char buf[40];
+
+
+  // ===================================================
+  // 标题
+  // ===================================================
+
+  u8f.setForegroundColor(TFT_WHITE);
+
+  u8f.setCursor(10, 25);
+  u8f.print("IP5306 快充电源");
+
+
+  // ===================================================
+  // 在线
+  // ===================================================
+
+  u8f.setForegroundColor(TFT_GREEN);
+
+  u8f.setCursor(10, 50);
+  u8f.print("IP5306: ONLINE");
+
+  u8f.setForegroundColor(TFT_WHITE);
+
+
+  // ===================================================
+  // 电池电压
+  // ===================================================
+
+  float voltage =
+    getBatteryVoltage();
+
+  u8f.setCursor(10, 78);
+  u8f.print("电池电压: ");
+
+  sprintf(
+    buf,
+    "%.2f V",
+    voltage
+  );
+
+  u8f.print(buf);
+
+
+  // ===================================================
+  // 电池电量
+  // ===================================================
+
+  int level =
+    getBatteryLevel();
+
+  u8f.setCursor(10, 105);
+  u8f.print("电池电量: ");
+
+  if (level >= 0)
+  {
+    sprintf(
+      buf,
+      "%d %%",
+      level
+    );
+
+    u8f.print(buf);
+
+    drawBattery(
+      155,
+      91,
+      50,
+      20,
+      level
+    );
+  }
+  else
+  {
+    u8f.print("--");
+  }
+
+
+  // ===================================================
+  // 读取状态寄存器
+  // ===================================================
+
+  uint8_t r70 =
+    readIP5306(REG_READ0);
+
+  uint8_t r71 =
+    readIP5306(REG_READ1);
+
+  uint8_t r72 =
+    readIP5306(REG_READ2);
+
+  uint8_t r78 =
+    readIP5306(REG_READ4);
+
+
+  // ===================================================
+  // 充电状态
+  // ===================================================
+
+  u8f.setCursor(10, 132);
+  u8f.print("充电状态: ");
+
+  if (r70 != 0xFF &&
+      (r70 & 0x08))
+  {
+    u8f.setForegroundColor(TFT_GREEN);
+    u8f.print("正在充电");
+    u8f.setForegroundColor(TFT_WHITE);
+  }
+  else
+  {
+    u8f.print("未充电");
+  }
+
+
+  // ===================================================
+  // 充满状态
+  // ===================================================
+
+  u8f.setCursor(10, 158);
+  u8f.print("充满状态: ");
+
+  if (r71 != 0xFF &&
+      (r71 & 0x08))
+  {
+    u8f.print("已充满");
+  }
+  else
+  {
+    u8f.print("未充满");
+  }
+
+
+  // ===================================================
+  // 负载状态
+  // ===================================================
+
+  u8f.setCursor(10, 184);
+  u8f.print("负载状态: ");
+
+  if (r72 != 0xFF &&
+      (r72 & 0x04))
+  {
+    u8f.print("轻负载");
+  }
+  else
+  {
+    u8f.print("正常负载");
+  }
+
+
+  // ===================================================
+  // 充电电流
+  // ===================================================
+
+  float current =
+    getChargeCurrent();
+
+  u8f.setCursor(10, 210);
+  u8f.print("充电电流: ");
+
+  if (current >= 0)
+  {
+    sprintf(
+      buf,
+      "%.2f A",
+      current
+    );
+
+    u8f.print(buf);
+  }
+  else
+  {
+    u8f.print("--");
+  }
+
+
+  // ===================================================
+  // 截止电压
+  // ===================================================
+
+  float cutoff =
+    getCutoffVoltage();
+
+  u8f.setCursor(10, 236);
+  u8f.print("截止电压: ");
+
+  if (cutoff > 0)
+  {
+    sprintf(
+      buf,
+      "%.3f V",
+      cutoff
+    );
+
+    u8f.print(buf);
+  }
+  else
+  {
+    u8f.print("--");
+  }
+
+
+  // ===================================================
+  // 原始寄存器
+  // ===================================================
+
+  u8f.setCursor(10, 262);
+
+  sprintf(
+    buf,
+    "70:%02X 71:%02X",
+    r70,
+    r71
+  );
+
+  u8f.print(buf);
+
+
+  u8f.setCursor(10, 287);
+
+  sprintf(
+    buf,
+    "72:%02X 78:%02X",
+    r72,
+    r78
+  );
+
+  u8f.print(buf);
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+  // ===================================================
+  // TFT
+  // ===================================================
+
+  tft.begin();
+
+  tft.setRotation(0);
+
+  tft.fillScreen(TFT_BLACK);
+
+
+  // ===================================================
+  // 中文字体
+  // ===================================================
+
+  u8f.begin(tft);
+
+  u8f.setFont(
+    u8g2_font_wqy16_t_gb2312
+  );
+
+  u8f.setForegroundColor(TFT_WHITE);
+
+
+  // ===================================================
+  // I2C
+  // ===================================================
+
+  Wire.begin(
+    SDA_PIN,
+    SCL_PIN
+  );
+
+  // 降低 I2C 到 50kHz
+  Wire.setClock(I2C_SPEED);
+
+  // 给 IP5306 上电稳定时间
+  delay(300);
+
+
+  // ===================================================
+  // ADC
+  // ===================================================
+
+  analogReadResolution(12);
+
+  analogSetPinAttenuation(
+    BATTERY_ADC_PIN,
+    ADC_11db
+  );
+
+
+  // ===================================================
+  // 显示启动扫描
+  // ===================================================
+
+  showScanning();
+
+  delay(500);
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop()
+{
+  // ===================================================
+  // 检查 IP5306
+  // ===================================================
+
+  if (!ip5306Exists())
+  {
+    // IP5306 不存在
+    showNotFound();
+
+    // 500ms 后重新尝试
+    delay(500);
+
+    return;
+  }
+
+
+  // ===================================================
+  // IP5306 已连接
+  // ===================================================
+
+  showIP5306Info();
+
+
+  // ===================================================
+  // 每秒刷新
+  // ===================================================
+
+  delay(1000);
+}

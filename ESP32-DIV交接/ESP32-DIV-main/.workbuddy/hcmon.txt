@@ -1,0 +1,40 @@
+﻿=== hcmon event messages (last 8) ===
+17:12:59 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:12:32 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:12:29 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:12:25 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:11:48 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:11:44 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:10:30 | Detected unrecognized USB driver (\Driver\hrdevmon).
+17:10:08 | Detected unrecognized USB driver (\Driver\hrdevmon).
+
+=== VMware services ===
+
+Name                    Status DisplayName                         
+----                    ------ -----------                         
+VMAuthdService         Running VMware Authorization Service        
+vmicguestinterface     Stopped Hyper-V Guest Service Interface     
+vmicheartbeat          Stopped Hyper-V Heartbeat Service           
+vmickvpexchange        Stopped Hyper-V Data Exchange Service       
+vmicrdv                Stopped Hyper-V 远程桌面虚拟化服务                   
+vmicshutdown           Stopped Hyper-V Guest Shutdown Service      
+vmictimesync           Stopped Hyper-V Time Synchronization Service
+vmicvmsession          Stopped Hyper-V PowerShell Direct Service   
+vmicvss                Stopped Hyper-V 卷影复制请求程序                    
+VMnetDHCP              Running VMware DHCP Service                 
+VMUSBArbService        Running VMware USB Arbitration Service      
+VMware NAT Service     Running VMware NAT Service                  
+VmwareAutostartService Stopped VMware 自动启动服务                       
+
+
+
+=== hcmon driver present ===
+
+
+Name     : hcmon
+State    : Running
+PathName : C:\WINDOWS\system32\DRIVERS\hcmon.sys
+
+
+
+

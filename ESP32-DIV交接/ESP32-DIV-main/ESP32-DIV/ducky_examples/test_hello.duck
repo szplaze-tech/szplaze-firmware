@@ -1,0 +1,10 @@
+REM Name: Hello Basic Test
+REM Description: 基础注入验证，任何已配对的 host（手机/电脑）都能看到效果。
+REM 用法：把光标放到任意输入框（备忘录/搜索框/浏览器地址栏），再在设备上 Run 本脚本。
+REM 注意：脚本仅支持 ASCII 英文字符与常见标点，不支持中文。
+
+STRING Hello from ESP32-DIV BLE Ducky!
+ENTER
+DELAY 500
+STRING Injection works :)
+ENTER

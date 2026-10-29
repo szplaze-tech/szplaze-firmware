@@ -16,6 +16,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
     steps:
       - name: 检出代码
         uses: actions/checkout@v4

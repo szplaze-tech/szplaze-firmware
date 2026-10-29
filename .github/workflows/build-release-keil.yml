@@ -1,6 +1,6 @@
 name: Keil Build and Release
 on:
-  workflow_dispatch
+  workflow_dispatch:
   # push:
   #   tags: [ "v*" ]
 jobs:

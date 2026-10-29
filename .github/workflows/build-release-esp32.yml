@@ -7,9 +7,7 @@
 name: ESP32 Build and Release
 
 on:
-  workflow_dispatch
-  push:
-    branches: [ main ]
+  workflow_dispatch:
   # push:
   #   tags: [ "v*" ]
 

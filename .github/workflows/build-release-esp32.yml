@@ -70,7 +70,7 @@ jobs:
               try {
                 const t = fs.readFileSync(f, 'utf8');
                 const lines = t.replace(/\u001b\[[0-9;]*m/g, '').split('\n');
-                const errs = lines.filter(l => /error|fatal|No such file/i.test(l)).slice(-50);
+                const errs = lines.filter(l => /error|fatal|No such file|undefined reference|multiple definition|overflow|first defined here|region/i.test(l)).slice(-80);
                 body += '=== ' + f + ' error lines ===\n```\n' + (errs.join('\n') || '(无匹配行)') + '\n```\n\n';
                 body += '=== ' + f + ' tail ===\n```\n' + t.slice(-1500) + '\n```\n\n';
               } catch (e) { body += '=== ' + f + ' === 不存在\n\n'; }

@@ -1,0 +1,68 @@
+# ESP32-DIV 云端编译 + 自动发版
+# 触发方式：
+#   1. 网页 Actions 页手动运行（workflow_dispatch，测试用）
+#   2. 发版：把下面 push/tags 两行开头的 # 删掉，然后 git tag v1.0.0 && git push origin v1.0.0
+# 构建约束（与本地 Keil/Arduino 环境一致，勿随意改）：
+#   esp32 core 2.0.10 / FlashSize=8M / PartitionScheme=huge_app / 不开 --warnings=all
+name: ESP32 Build and Release
+
+on:
+  workflow_dispatch
+  # push:
+  #   tags: [ "v*" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$PWD/bin" >> $GITHUB_PATH
+
+      - name: 安装 ESP32 核心 2.0.10
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.10
+
+      - name: 安装外部依赖库
+        run: |
+          arduino-cli lib install "PCF8574"
+          arduino-cli lib install "arduinoFFT"
+        # TFT_eSPI、SmartRC-CC1101 使用仓库内 Libraries 目录的版本（含定制 User_Setup），不从索引安装
+
+      - name: 编译固件
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32:FlashSize=8M,PartitionScheme=huge_app" \
+            --libraries "ESP32-DIV交接/ESP32-DIV-main/Libraries" \
+            --build-path ".ci_build" \
+            "ESP32-DIV交接/ESP32-DIV-main/ESP32-DIV"
+
+      - name: 整理产物
+        run: |
+          mkdir -p release
+          cp .ci_build/*.bin release/ESP32-DIV-firmware.bin
+          cp .ci_build/*.elf release/ESP32-DIV-firmware.elf
+          sha256sum release/* > release/SHA256SUMS.txt
+          ls -la release/
+
+      - name: 上传编译产物（仅手动运行时可见）
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP32-DIV-firmware
+          path: release/
+
+      - name: 创建 Release 并挂载产物（仅打 tag 时生效）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

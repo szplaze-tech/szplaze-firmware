@@ -69,7 +69,10 @@ jobs:
             for (const f of ['libfail.txt', 'compile_output.txt']) {
               try {
                 const t = fs.readFileSync(f, 'utf8');
-                body += '=== ' + f + '（最后 3000 字符）===\n```\n' + t.slice(-3000) + '\n```\n\n';
+                const lines = t.replace(/\u001b\[[0-9;]*m/g, '').split('\n');
+                const errs = lines.filter(l => /error|fatal|No such file/i.test(l)).slice(-50);
+                body += '=== ' + f + ' error lines ===\n```\n' + (errs.join('\n') || '(无匹配行)') + '\n```\n\n';
+                body += '=== ' + f + ' tail ===\n```\n' + t.slice(-1500) + '\n```\n\n';
               } catch (e) { body += '=== ' + f + ' === 不存在\n\n'; }
             }
             await github.rest.issues.create({

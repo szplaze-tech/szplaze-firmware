@@ -38,7 +38,7 @@ jobs:
       - name: 安装外部依赖库
         run: |
           rm -f libfail.txt
-          for lib in "PCF8574" "Adafruit PN532" "ArduinoJson@6.21.5" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RF24" "XPT2046_Touchscreen"; do
+          for lib in "Adafruit PN532" "ArduinoJson@6.21.5" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RF24" "XPT2046_Touchscreen"; do
             if ! arduino-cli lib install "$lib" > /tmp/libout.txt 2>&1; then
               echo "LIB_FAILED: $lib" | tee -a libfail.txt
               cat /tmp/libout.txt >> libfail.txt

@@ -38,7 +38,7 @@ jobs:
       - name: 安装外部依赖库
         run: |
           rm -f libfail.txt
-          for lib in "PCF8574" "Adafruit PN532" "ArduinoJson@6.21.5" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RCSwitch" "RF24" "XPT2046_Touchscreen"; do
+          for lib in "PCF8574" "Adafruit PN532" "ArduinoJson@6.21.5" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RF24" "XPT2046_Touchscreen"; do
             if ! arduino-cli lib install "$lib" > /tmp/libout.txt 2>&1; then
               echo "LIB_FAILED: $lib" | tee -a libfail.txt
               cat /tmp/libout.txt >> libfail.txt
@@ -46,7 +46,7 @@ jobs:
           done
           if [ -f libfail.txt ]; then echo "有库安装失败"; exit 1; fi
         # 依赖清单来自对工程全部 #include 的静态扫描
-        # TFT_eSPI、SmartRC-CC1101 使用仓库内 Libraries 目录的版本（含定制 User_Setup），不从索引安装
+        # TFT_eSPI、SmartRC-CC1101、RCSwitch(仓库内 Libraries/RCSwitch, 本地 v2.6.4)使用仓库内 Libraries 目录的版本（含定制 User_Setup），不从索引安装
         # NimBLE 钉 1.4.x：2.x 需要 IDF5，与 esp32 core 2.0.10 不兼容
         # ArduinoJson 钉 6.x：v7 API 不兼容
 

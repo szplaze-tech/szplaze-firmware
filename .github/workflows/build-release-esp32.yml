@@ -38,7 +38,7 @@ jobs:
       - name: 安装外部依赖库
         run: |
           rm -f libfail.txt
-          for lib in "Adafruit PN532" "ArduinoJson@6.21.5" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RF24" "XPT2046_Touchscreen"; do
+          for lib in "Adafruit PN532" "Adafruit BusIO@1.9.3" "ArduinoJson@6.21.2" "IRremoteESP8266" "NimBLE-Arduino@1.4.3" "RF24" "XPT2046_Touchscreen"; do
             if ! arduino-cli lib install "$lib" > /tmp/libout.txt 2>&1; then
               echo "LIB_FAILED: $lib" | tee -a libfail.txt
               cat /tmp/libout.txt >> libfail.txt
@@ -56,6 +56,8 @@ jobs:
           arduino-cli compile \
             --fqbn "esp32:esp32:esp32:FlashSize=8M,PartitionScheme=huge_app" \
             --libraries "ESP32-DIV交接/ESP32-DIV-main/Libraries" \
+            --build-property "compiler.c.elf.extra_flags=-Wl,--allow-multiple-definition" \
+            --build-property "compiler.cpp.extra_flags=-DCONFIG_BTDM_CTRL_BLE_MAX_CONN=1 -DCONFIG_BT_NIMBLE_MAX_CONNECTIONS=1" \
             --build-path ".ci_build" \
             "ESP32-DIV交接/ESP32-DIV-main/ESP32-DIV" 2>&1 | tee compile_output.txt
 

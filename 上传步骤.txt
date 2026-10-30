@@ -1,0 +1,67 @@
+ESP32-DIV 上传 / 发版 步骤参考
+================================
+
+【一句话原理】
+本地只管改代码 + 推上去(git push)，编译和出固件全由 GitHub 云端自动完成。
+你本地不用编译，也不用自己生成 .bin。
+
+【准备：打开命令行】
+- 在 备份esp-div 文件夹上 右键 → Git Bash Here（最省事）
+- 或 开始菜单搜 Git Bash 打开再 cd 进去
+- 用 Git Bash，别用系统 CMD / PowerShell
+- 验证： git --version   （显示版本号即正常）
+
+【第0步：进目录 + 看状态（每次开工先做）】
+cd /e/Chenxuwen_project/Arduino_project/备份esp-div
+git status          # 看工作区干不干净
+git branch          # 确认当前在 main 分支（带 * 的那个）
+
+【第1步：改代码】
+用 VS Code / Arduino IDE 打开文件改，记得保存。改完可用 git diff 看具体改动。
+
+【第2步：暂存】
+git add -A         # 所有改动（增/改/删）纳入暂存区；新手最省心
+
+【第3步：提交（仅本地快照，还不上云）】
+git commit -m "一句话说明本次改动"
+
+【第4步：推送 → 触发云端编译】
+git push origin main
+# 期望：最后显示 main -> main / completed 即成功
+# 若提示输入密码：用户名=GitHub 账号；密码栏填 Personal Access Token（不是账户密码）
+
+【第5步：网页看编译结果】
+github.com/szplaze-tech/szplaze-firmware → 点 Actions → 找最上面那次运行
+- 绿色对勾 = 成功 → 去 Releases 下载固件
+- 红色叉   = 失败 → 点进去看红色 error: 行，改完重走 2~4 步
+编译耗时约 3~6 分钟，别指望秒出。
+
+【发版（出正式固件）】
+git tag v0.2.0
+git push origin v0.2.0
+# 版本号递增：已有 v0.1.0，下次用 v0.2.0（大更新）或 v0.1.1（小修复），不要重复
+# 去 Releases 下载：bin / elf / partitions / SHA256SUMS
+# 两个 Source code 是 GitHub 自动加的源码包，忽略
+
+【一条龙（日常发版直接复制这块）】
+cd /e/Chenxuwen_project/Arduino_project/备份esp-div
+git add -A
+git commit -m "v0.2.0: 改动说明"
+git push origin main
+git tag v0.2.0
+git push origin v0.2.0
+
+【常见坑】
+1. 改完没保存 → push 上去啥也没变
+2. 没 commit 就 push → 推的是空的，云上看不到改动
+3. 不在 main 分支 → Actions 不编译，白推
+4. 版本号重复 → 已有 v0.1.0 再打 v0.1.0 会失败
+5. 推完不看 Actions → 红了自己不知道
+
+【网页三个标签页】
+- Code     ：浏览 / 下载源码
+- Actions  ：每次编译日志与状态（绿灯/红灯）
+- Releases ：发版固件下载页
+
+【红线】
+E:\...\STM32\DDS\touch（DDS / Keil 工程）绝不碰：不要 git init / 提交 / 推送 / 建仓库。

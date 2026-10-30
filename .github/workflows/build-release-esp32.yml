@@ -1,17 +1,17 @@
 # ESP32-DIV 云端编译 + 自动发版
 # 触发方式：
-#   1. push 到 main 自动编译（当前开启，用于验证编译）
-#   2. 发版：把下面 push/tags 两行开头的 # 删掉，然后 git tag v1.0.0 && git push origin v1.0.0
+#   1. push 到 main：只验证编译，不发布
+#   2. 打 tag 发版：git tag v1.0.0 && git push origin v1.0.0
+#      → 自动编译并把 bin/elf/SHA256SUMS 挂到 GitHub Releases
 # 构建约束（与本地环境一致，勿随意改）：
-#   esp32 core 2.0.10 / FlashSize=8M / PartitionScheme=huge_app / 不开 --warnings=all
+#   esp32 core 2.0.10 / ESP32-S3 / FlashSize=8M / PartitionScheme=huge_app
 name: ESP32 Build and Release
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-  # push:
-  #   tags: [ "v*" ]
+    tags: [ "v*" ]
 
 jobs:
   build:

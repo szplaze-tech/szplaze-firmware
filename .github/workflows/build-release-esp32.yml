@@ -56,6 +56,7 @@ jobs:
           arduino-cli compile \
             --fqbn "esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=huge_app" \
             --libraries "ESP32-DIV交接/ESP32-DIV-main/Libraries" \
+            --build-property "compiler.c.elf.extra_flags=-Wl,--allow-multiple-definition" \
             --build-path ".ci_build" \
             "ESP32-DIV交接/ESP32-DIV-main/ESP32-DIV" 2>&1 | tee compile_output.txt
           # 板型必须与本地 build_p0.sh 一致：esp32s3（不是 esp32），否则 DRAM 布局不符会溢出

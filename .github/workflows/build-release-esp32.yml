@@ -68,7 +68,7 @@ jobs:
           script: |
             const fs = require('fs');
             let body = 'CI 失败 @ ' + context.sha.slice(0,7) + '\n\n';
-            for (const f of ['libfail.txt', 'compile_output.txt']) {
+            for (const f of ['libfail.txt', 'compile_output.txt', 'ci_ls.txt']) {
               try {
                 const t = fs.readFileSync(f, 'utf8');
                 const lines = t.replace(/\u001b\[[0-9;]*m/g, '').split('\n');
@@ -87,8 +87,12 @@ jobs:
       - name: 整理产物
         run: |
           mkdir -p release
-          cp .ci_build/*.bin release/ESP32-DIV-firmware.bin
-          cp .ci_build/*.elf release/ESP32-DIV-firmware.elf
+          ls -la .ci_build | tee ci_ls.txt
+          find .ci_build -maxdepth 1 -type f \( -name "*.bin" -o -name "*.elf" \) -print -exec cp {} release/ \; | tee -a ci_ls.txt
+          if [ -z "$(find .ci_build -maxdepth 1 -name '*.bin')" ]; then
+            echo "NO_BIN_FOUND" | tee -a ci_ls.txt
+            exit 1
+          fi
           sha256sum release/* > release/SHA256SUMS.txt
           ls -la release/
 

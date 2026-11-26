@@ -1,0 +1,4 @@
+13674bbf62e5a0026956c53b7eab46e9ffc69c1e9c416e9da972c08930729482  release/ESP32-DIV.ino.bin
+498031444695367d9af10f75f7c8c060e2237c39879eac287223dd4b4c1077fe  release/ESP32-DIV.ino.bootloader.bin
+9a118a9497d84a92c7d5184845d44867a64a9aad5a7396c4e4724a8f3b4d4676  release/ESP32-DIV.ino.elf
+1d9cca96de0fe07ad7fc0648b9878ddecd9ce565e38b589ad20fea698ed4c80c  release/ESP32-DIV.ino.partitions.bin
